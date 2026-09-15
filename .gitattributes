@@ -1,0 +1,2 @@
+# Shell scripts need LF endings or bash in Git Bash / containers chokes on \r
+*.sh text eol=lf

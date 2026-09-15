@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mirrorgate
+      POSTGRES_PASSWORD: mirrorgate
+      POSTGRES_DB: mirrorgate
+    ports:
+      # 5433 on the host so it doesn't clash with a local Postgres install
+      - "5433:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mirrorgate -d mirrorgate"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  stable-service:
+    build: ./services/stable
+    environment:
+      PORT: "9001"
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9001/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  candidate-service:
+    build: ./services/candidate
+    environment:
+      PORT: "9002"
+    ports:
+      - "9002:9002"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9002/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  gateway:
+    build: ./gateway
+    environment:
+      PORT: "8080"
+      ADMIN_PORT: "8081"
+      STABLE_URL: http://stable-service:9001
+      CANDIDATE_URL: http://candidate-service:9002
+      STABLE_VERSION: v1
+      CANDIDATE_VERSION: v2
+      DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
+      SHADOW_TIMEOUT: 2s
+      MIRROR_METHODS: GET
+      MAX_SHADOW_IN_FLIGHT: "100"
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      stable-service:
+        condition: service_healthy
+      candidate-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/internal/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+  # Runs the Go tests (including the Postgres integration test) without
+  # needing Go installed locally:
+  #   docker compose run --rm gateway-tests
+  gateway-tests:
+    image: golang:1.25-alpine
+    profiles: ["test"]
+    working_dir: /src/gateway
+    volumes:
+      - .:/src
+      - gomod:/go/pkg/mod
+    environment:
+      TEST_DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
+    command: go test -count=1 -v ./...
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  gomod:
