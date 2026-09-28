@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"mirrorgate/gateway/internal/compare"
-	"mirrorgate/gateway/internal/storage"
+	"mirrorgate/gateway/internal/proxy"
+	"mirrorgate/gateway/internal/sampling"
+	"mirrorgate/shared/compare"
+	"mirrorgate/shared/storage"
 )
 
 type Deployment struct {
@@ -18,13 +20,25 @@ type Deployment struct {
 	CandidateURL     string `json:"candidate_url"`
 }
 
+// gateway exposes the counters the database can't answer: how much traffic
+// came in and how much of it was actually mirrored.
+type gateway interface {
+	Stats() proxy.Stats
+}
+
+type sampler interface {
+	Stats() sampling.Stats
+}
+
 type API struct {
 	store      *storage.Store
+	gateway    gateway
+	sampler    sampler
 	deployment Deployment
 }
 
-func New(store *storage.Store, deployment Deployment) *API {
-	return &API{store: store, deployment: deployment}
+func New(store *storage.Store, gw gateway, sm sampler, deployment Deployment) *API {
+	return &API{store: store, gateway: gw, sampler: sm, deployment: deployment}
 }
 
 func (a *API) Routes() http.Handler {
@@ -53,6 +67,8 @@ func (a *API) stats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deployment": a.deployment,
 		"stats":      st,
+		"gateway":    a.gateway.Stats(),
+		"sampling":   a.sampler.Stats(),
 	})
 }
 

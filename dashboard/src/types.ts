@@ -3,6 +3,7 @@ export type Outcome = "match" | "different" | "error";
 export interface Comparison {
   id: number;
   request_id: string;
+  trace_id?: string;
   method: string;
   path: string;
   query: string;
@@ -36,4 +37,25 @@ export interface Deployment {
   candidate_version: string;
   stable_url: string;
   candidate_url: string;
+}
+
+export interface GatewayStats {
+  eligible: number;
+  mirrored: number;
+  skipped_in_flight: number;
+  published: number;
+  publish_failed: number;
+}
+
+export interface SamplingRule {
+  pattern: string;
+  rate: number;
+}
+
+export interface SamplingStats {
+  mode: "full" | "random" | "endpoint";
+  rate: number;
+  rules?: SamplingRule[];
+  mirrored: number;
+  skipped: number;
 }

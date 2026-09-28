@@ -1,6 +1,8 @@
 CREATE TABLE IF NOT EXISTS request_comparisons (
     id                   BIGSERIAL PRIMARY KEY,
     request_id           TEXT NOT NULL UNIQUE,
+    -- W3C trace id, so a row can be looked up in Jaeger.
+    trace_id             TEXT,
     method               TEXT NOT NULL,
     path                 TEXT NOT NULL,
     query                TEXT NOT NULL DEFAULT '',
@@ -26,3 +28,4 @@ CREATE TABLE IF NOT EXISTS request_comparisons (
 
 CREATE INDEX IF NOT EXISTS idx_comparisons_received_at ON request_comparisons (received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_comparisons_outcome ON request_comparisons (outcome);
+CREATE INDEX IF NOT EXISTS idx_comparisons_trace_id ON request_comparisons (trace_id);

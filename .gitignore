@@ -3,3 +3,8 @@ dist/
 .env
 *.log
 *.tsbuildinfo
+
+# compiled test-service binaries from building outside Docker
+services/stable/stable
+services/candidate/candidate
+.ipynb_checkpoints/

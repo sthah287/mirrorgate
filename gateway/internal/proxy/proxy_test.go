@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,33 +11,49 @@ import (
 	"testing"
 	"time"
 
-	"mirrorgate/gateway/internal/compare"
-	"mirrorgate/gateway/internal/storage"
+	"mirrorgate/shared/event"
 )
 
-type fakeStore struct {
-	saved chan storage.Comparison
+// The gateway no longer decides whether responses match, so these tests
+// check what it publishes. Classification is tested in the worker.
+type fakePublisher struct {
+	events chan event.Comparison
+	fail   error
 }
 
-func newFakeStore() *fakeStore {
-	return &fakeStore{saved: make(chan storage.Comparison, 10)}
+func newFakePublisher() *fakePublisher {
+	return &fakePublisher{events: make(chan event.Comparison, 10)}
 }
 
-func (f *fakeStore) SaveComparison(ctx context.Context, c storage.Comparison) error {
-	f.saved <- c
+func (f *fakePublisher) Publish(ctx context.Context, e event.Comparison) error {
+	if f.fail != nil {
+		return f.fail
+	}
+	f.events <- e
 	return nil
 }
 
-func (f *fakeStore) next(t *testing.T) storage.Comparison {
+func (f *fakePublisher) next(t *testing.T) event.Comparison {
 	t.Helper()
 	select {
-	case c := <-f.saved:
-		return c
+	case e := <-f.events:
+		return e
 	case <-time.After(3 * time.Second):
-		t.Fatal("no comparison was saved")
-		return storage.Comparison{}
+		t.Fatal("no comparison event was published")
+		return event.Comparison{}
 	}
 }
+
+// mirrorAll and mirrorNone stand in for the real sampler, which has its own
+// tests in the sampling package.
+type fixedSampler bool
+
+func (f fixedSampler) Mirror(string) bool { return bool(f) }
+
+const (
+	mirrorAll  = fixedSampler(true)
+	mirrorNone = fixedSampler(false)
+)
 
 func jsonServer(status int, body string, delay time.Duration) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -51,14 +68,19 @@ func jsonServer(status int, body string, delay time.Duration) *httptest.Server {
 	}))
 }
 
-func newTestProxy(t *testing.T, stableURL, candidateURL string, store Store, cfg Config) *Proxy {
+func newTestProxy(t *testing.T, stableURL, candidateURL string, publisher Publisher, cfg Config) *Proxy {
+	t.Helper()
+	return newTestProxyWithSampler(t, stableURL, candidateURL, publisher, mirrorAll, cfg)
+}
+
+func newTestProxyWithSampler(t *testing.T, stableURL, candidateURL string, publisher Publisher, sampler Sampler, cfg Config) *Proxy {
 	t.Helper()
 	cfg.StableURL = stableURL
 	cfg.CandidateURL = candidateURL
 	if cfg.MirrorMethods == nil {
 		cfg.MirrorMethods = []string{"GET"}
 	}
-	p, err := New(cfg, store)
+	p, err := New(cfg, publisher, sampler)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -83,8 +105,8 @@ func TestStableResponseIsReturned(t *testing.T) {
 	}))
 	defer candidate.Close()
 
-	store := newFakeStore()
-	p := newTestProxy(t, stable.URL, candidate.URL, store, Config{})
+	publisher := newFakePublisher()
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/products/1?currency=usd", nil)
 	rec := httptest.NewRecorder()
@@ -103,12 +125,15 @@ func TestStableResponseIsReturned(t *testing.T) {
 		t.Error("missing X-Request-ID")
 	}
 
-	c := store.next(t)
-	if c.Outcome != compare.Match {
-		t.Errorf("outcome = %s, want match (differences: %v)", c.Outcome, c.Differences)
+	e := publisher.next(t)
+	if e.RequestID != rec.Header().Get("X-Request-ID") {
+		t.Error("published request id does not match the one returned to the client")
 	}
-	if c.RequestID != rec.Header().Get("X-Request-ID") {
-		t.Error("saved request id does not match the one returned to the client")
+	if e.Method != http.MethodGet || e.Path != "/api/products/1" || e.Query != "currency=usd" {
+		t.Errorf("event request = %s %s?%s", e.Method, e.Path, e.Query)
+	}
+	if e.Stable.Status != 200 || e.Candidate.Status != 200 {
+		t.Errorf("statuses = %d / %d", e.Stable.Status, e.Candidate.Status)
 	}
 	if shadowHeader.Load() != "true" {
 		t.Error("candidate request was not marked as shadow traffic")
@@ -121,8 +146,8 @@ func TestCandidateDifferenceDoesNotReachClient(t *testing.T) {
 	candidate := jsonServer(http.StatusOK, `{"id":12,"name":"Wireless Keyboard","price":59.99}`, 0)
 	defer candidate.Close()
 
-	store := newFakeStore()
-	p := newTestProxy(t, stable.URL, candidate.URL, store, Config{})
+	publisher := newFakePublisher()
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{})
 
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products/12", nil))
@@ -131,12 +156,9 @@ func TestCandidateDifferenceDoesNotReachClient(t *testing.T) {
 		t.Fatalf("client received candidate body: %s", rec.Body.String())
 	}
 
-	c := store.next(t)
-	if c.Outcome != compare.Different || c.BodyMatch {
-		t.Errorf("outcome = %s body_match = %v, want different/false", c.Outcome, c.BodyMatch)
-	}
-	if len(c.Differences) != 1 || c.Differences[0] != "price: 49.99 != 59.99" {
-		t.Errorf("differences = %v", c.Differences)
+	e := publisher.next(t)
+	if !strings.Contains(e.Stable.Body, "49.99") || !strings.Contains(e.Candidate.Body, "59.99") {
+		t.Errorf("event bodies = %q / %q", e.Stable.Body, e.Candidate.Body)
 	}
 }
 
@@ -146,8 +168,8 @@ func TestSlowCandidateDoesNotDelayClient(t *testing.T) {
 	candidate := jsonServer(http.StatusOK, `{"ok":true}`, 5*time.Second)
 	defer candidate.Close()
 
-	store := newFakeStore()
-	p := newTestProxy(t, stable.URL, candidate.URL, store, Config{ShadowTimeout: 300 * time.Millisecond})
+	publisher := newFakePublisher()
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{ShadowTimeout: 300 * time.Millisecond})
 
 	start := time.Now()
 	rec := httptest.NewRecorder()
@@ -162,15 +184,12 @@ func TestSlowCandidateDoesNotDelayClient(t *testing.T) {
 		t.Errorf("client waited %s, candidate is slowing down the real request", elapsed)
 	}
 
-	c := store.next(t)
-	if c.Outcome != compare.Error {
-		t.Errorf("outcome = %s, want error", c.Outcome)
+	e := publisher.next(t)
+	if !strings.Contains(e.CandidateError, "timed out") {
+		t.Errorf("candidate error = %q", e.CandidateError)
 	}
-	if c.CandidateStatus != nil {
-		t.Errorf("candidate status = %d, want nil after timeout", *c.CandidateStatus)
-	}
-	if !strings.Contains(c.CandidateError, "timed out") {
-		t.Errorf("candidate error = %q", c.CandidateError)
+	if e.Candidate.Status != 0 {
+		t.Errorf("candidate status = %d, want 0 after a timeout", e.Candidate.Status)
 	}
 }
 
@@ -180,8 +199,8 @@ func TestCandidateDownDoesNotBreakClient(t *testing.T) {
 	candidate := jsonServer(http.StatusOK, `{"ok":true}`, 0)
 	candidate.Close()
 
-	store := newFakeStore()
-	p := newTestProxy(t, stable.URL, candidate.URL, store, Config{})
+	publisher := newFakePublisher()
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{})
 
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products", nil))
@@ -189,9 +208,40 @@ func TestCandidateDownDoesNotBreakClient(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 
-	c := store.next(t)
-	if c.Outcome != compare.Error || c.CandidateError == "" {
-		t.Errorf("outcome = %s error = %q, want an error to be recorded", c.Outcome, c.CandidateError)
+	e := publisher.next(t)
+	if e.CandidateError == "" {
+		t.Error("expected the connection failure to be recorded on the event")
+	}
+}
+
+// A broker outage has to look like a lost comparison, not a failed request.
+func TestBrokerFailureDoesNotAffectClient(t *testing.T) {
+	stable := jsonServer(http.StatusOK, `{"id":1}`, 0)
+	defer stable.Close()
+	candidate := jsonServer(http.StatusOK, `{"id":1}`, 0)
+	defer candidate.Close()
+
+	publisher := newFakePublisher()
+	publisher.fail = errors.New("kafka: no brokers available")
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{})
+
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products/1", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != `{"id":1}` {
+		t.Fatalf("client got %d %q, want the stable response", rec.Code, rec.Body.String())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := p.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	st := p.Stats()
+	if st.PublishFailed != 1 || st.Published != 0 {
+		t.Errorf("stats = %+v, want the failure counted and nothing published", st)
+	}
+	if st.Mirrored != 1 {
+		t.Errorf("mirrored = %d, want 1", st.Mirrored)
 	}
 }
 
@@ -210,13 +260,13 @@ func TestRequestBodyIsSentToBothServices(t *testing.T) {
 	}))
 	defer candidate.Close()
 
-	store := newFakeStore()
-	p := newTestProxy(t, stable.URL, candidate.URL, store, Config{MirrorMethods: []string{"GET", "POST"}})
+	publisher := newFakePublisher()
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{MirrorMethods: []string{"GET", "POST"}})
 
 	payload := `{"items":[1,2,3]}`
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/cart/quote", strings.NewReader(payload)))
-	store.next(t)
+	publisher.next(t)
 
 	if stableBody.Load() != payload {
 		t.Errorf("stable body = %v", stableBody.Load())
@@ -236,7 +286,7 @@ func TestMethodsNotInMirrorListAreNotMirrored(t *testing.T) {
 	}))
 	defer candidate.Close()
 
-	p := newTestProxy(t, stable.URL, candidate.URL, newFakeStore(), Config{MirrorMethods: []string{"GET"}})
+	p := newTestProxy(t, stable.URL, candidate.URL, newFakePublisher(), Config{MirrorMethods: []string{"GET"}})
 
 	rec := httptest.NewRecorder()
 	p.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/orders", strings.NewReader(`{}`)))
@@ -249,7 +299,45 @@ func TestMethodsNotInMirrorListAreNotMirrored(t *testing.T) {
 	if err := p.Wait(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if n := candidateHits.Load(); n != 0 {
-		t.Errorf("candidate received %d requests, want 0", n)
+	if candidateHits.Load() != 0 {
+		t.Errorf("candidate received %d requests, want 0", candidateHits.Load())
+	}
+	if st := p.Stats(); st.Eligible != 0 || st.Mirrored != 0 {
+		t.Errorf("stats = %+v, want nothing counted as eligible", st)
+	}
+}
+
+// A skipped request should not reach the candidate at all, which is the
+// whole point of sampling: less load, not just fewer stored rows.
+func TestSkippedRequestNeverReachesCandidate(t *testing.T) {
+	stable := jsonServer(http.StatusOK, `{"id":1}`, 0)
+	defer stable.Close()
+
+	var candidateHits atomic.Int32
+	candidate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		candidateHits.Add(1)
+	}))
+	defer candidate.Close()
+
+	publisher := newFakePublisher()
+	p := newTestProxyWithSampler(t, stable.URL, candidate.URL, publisher, mirrorNone, Config{})
+
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/products/1", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != `{"id":1}` {
+		t.Fatalf("client got %d %q, want the stable response", rec.Code, rec.Body.String())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := p.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if candidateHits.Load() != 0 {
+		t.Errorf("candidate received %d requests, want 0", candidateHits.Load())
+	}
+	st := p.Stats()
+	if st.Eligible != 1 || st.Mirrored != 0 || st.Published != 0 {
+		t.Errorf("stats = %+v, want eligible=1 with nothing mirrored", st)
 	}
 }

@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"mirrorgate/shared/tracing"
 )
 
 // The candidate is a copy of the stable service with a few intentional
@@ -66,8 +71,16 @@ func main() {
 	mux.HandleFunc("GET /api/products/{id}", getProduct)
 	mux.HandleFunc("GET /api/users/{id}", getUser)
 
+	shutdownTracing, err := tracing.Init(context.Background(), "candidate-service")
+	if err != nil {
+		log.Fatalf("tracing: %v", err)
+	}
+	defer shutdownTracing(context.Background())
+
+	// otelhttp reads the traceparent header the gateway sent, so this service
+	// shows up as part of the gateway's trace rather than its own.
 	log.Printf("candidate service (v2) listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(http.ListenAndServe(":"+port, otelhttp.NewHandler(mux, "candidate-service")))
 }
 
 func listProducts(w http.ResponseWriter, r *http.Request) {

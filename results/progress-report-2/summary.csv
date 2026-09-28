@@ -1,0 +1,8 @@
+strategy,mode,target_rate,requests,test_duration_s,eligible,mirrored,actual_rate,comparisons_stored,regressions_detected,regressions_missed,p50_ms,p95_ms,p99_ms,throughput_rps
+off,random,0,3001,27.7,3001,0,0.0%,0,0/4,4,0.67,1.12,1.56,108.4
+full,full,1,3000,27.7,3000,3000,100.0%,3000,4/4,0,0.74,1.03,1.6,108.3
+random-50,random,0.5,3000,27.7,3000,1527,50.9%,1527,4/4,0,0.68,1.02,1.49,108.3
+random-25,random,0.25,3001,27.7,3001,702,23.4%,702,4/4,0,0.63,0.97,1.56,108.4
+random-10,random,0.1,3000,27.7,3000,299,10.0%,299,4/4,0,0.63,0.98,1.38,108.3
+endpoint,endpoint,0,3001,27.7,3001,1243,41.4%,1243,3/4,1,0.71,1.08,1.56,108.4
+endpoint-fixed,endpoint,0,3001,27.7,3001,1279,42.6%,1279,4/4,0,0.68,1.01,1.5,108.4

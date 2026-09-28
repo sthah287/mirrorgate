@@ -1,0 +1,3 @@
+strategy,mode,target_rate,requests,test_duration_s,eligible,mirrored,actual_rate,comparisons_stored,regressions_detected,regressions_missed,p50_ms,p95_ms,p99_ms,throughput_rps
+full-load,full,1,10001,20.0,10001,10001,100.0%,10001,4/4,0,0.58,0.92,1.77,500.0
+off-load,random,0,10001,20.0,10001,0,0.0%,0,0/4,4,0.5,0.78,1.26,500.0

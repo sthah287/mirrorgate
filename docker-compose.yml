@@ -17,12 +17,51 @@ services:
       timeout: 3s
       retries: 10
 
+  # Redpanda speaks the Kafka protocol but runs as a single container with no
+  # ZooKeeper, which matters when six other services share a laptop.
+  redpanda:
+    image: redpandadata/redpanda:v25.2.5
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --default-log-level=warn
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      # Containers reach the broker on redpanda:9092, the host on localhost:19092.
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpandadata:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.65.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      # 16686 is the UI, 4318 is where the services send spans over OTLP/HTTP.
+      - "16686:16686"
+      - "4318:4318"
+
   stable-service:
-    build: ./services/stable
+    build:
+      context: .
+      dockerfile: services/stable/Dockerfile
     environment:
       PORT: "9001"
+      OTEL_SERVICE_NAME: stable-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "9001:9001"
+    depends_on:
+      - jaeger
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9001/health"]
       interval: 5s
@@ -30,11 +69,17 @@ services:
       retries: 5
 
   candidate-service:
-    build: ./services/candidate
+    build:
+      context: .
+      dockerfile: services/candidate/Dockerfile
     environment:
       PORT: "9002"
+      OTEL_SERVICE_NAME: candidate-service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "9002:9002"
+    depends_on:
+      - jaeger
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9002/health"]
       interval: 5s
@@ -42,7 +87,9 @@ services:
       retries: 5
 
   gateway:
-    build: ./gateway
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
     environment:
       PORT: "8080"
       ADMIN_PORT: "8081"
@@ -51,14 +98,24 @@ services:
       STABLE_VERSION: v1
       CANDIDATE_VERSION: v2
       DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
       SHADOW_TIMEOUT: 2s
       MIRROR_METHODS: GET
-      MAX_SHADOW_IN_FLIGHT: "100"
+      MAX_SHADOW_IN_FLIGHT: ${MAX_SHADOW_IN_FLIGHT:-100}
+      # Overridable so one experiment run can change strategy without editing
+      # this file: SAMPLING_MODE=random SAMPLING_RATE=0.25 docker compose up -d gateway
+      SAMPLING_MODE: ${SAMPLING_MODE:-full}
+      SAMPLING_RATE: ${SAMPLING_RATE:-}
+      SAMPLING_RULES: ${SAMPLING_RULES:-}
+      OTEL_SERVICE_NAME: gateway
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     ports:
       - "8080:8080"
       - "8081:8081"
     depends_on:
       postgres:
+        condition: service_healthy
+      redpanda:
         condition: service_healthy
       stable-service:
         condition: service_healthy
@@ -70,6 +127,23 @@ services:
       timeout: 2s
       retries: 5
 
+  comparison-worker:
+    build:
+      context: .
+      dockerfile: comparison-worker/Dockerfile
+    environment:
+      DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_GROUP: mirrorgate-comparison-worker
+      OTEL_SERVICE_NAME: comparison-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
   dashboard:
     build: ./dashboard
     ports:
@@ -78,23 +152,41 @@ services:
       gateway:
         condition: service_healthy
 
-  # Runs the Go tests (including the Postgres integration test) without
-  # needing Go installed locally:
-  #   docker compose run --rm gateway-tests
-  gateway-tests:
+  # Runs every module's tests without needing Go installed locally:
+  #   docker compose run --rm tests
+  # The tests/ module talks to the running stack, so the gateway has to be up.
+  tests:
     image: golang:1.25-alpine
     profiles: ["test"]
-    working_dir: /src/gateway
+    working_dir: /src
     volumes:
       - .:/src
       - gomod:/go/pkg/mod
     environment:
-      TEST_DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
-    command: go test -count=1 -v ./...
+      TEST_GATEWAY_URL: http://gateway:8080
+      TEST_ADMIN_URL: http://gateway:8081
+    command: sh /src/scripts/run-tests.sh
     depends_on:
-      postgres:
+      gateway:
         condition: service_healthy
+      comparison-worker:
+        condition: service_started
+
+  # k6 load generator for the sampling experiment. The script path lives here
+  # rather than on the command line because Git Bash on Windows rewrites a
+  # bare /scripts/... argument into a Windows path before Docker sees it.
+  #   ./experiments/run.sh
+  k6:
+    image: grafana/k6:0.55.0
+    profiles: ["test"]
+    command: ["run", "/scripts/sampling.js"]
+    volumes:
+      - ./experiments:/scripts
+      - ./results:/results
+    environment:
+      GATEWAY_URL: http://gateway:8080
 
 volumes:
   pgdata:
+  redpandadata:
   gomod:

@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+
+	"mirrorgate/shared/tracing"
 )
 
 type Product struct {
@@ -58,8 +63,16 @@ func main() {
 	mux.HandleFunc("GET /api/products/{id}", getProduct)
 	mux.HandleFunc("GET /api/users/{id}", getUser)
 
+	shutdownTracing, err := tracing.Init(context.Background(), "stable-service")
+	if err != nil {
+		log.Fatalf("tracing: %v", err)
+	}
+	defer shutdownTracing(context.Background())
+
+	// otelhttp reads the traceparent header the gateway sent, so this service
+	// shows up as part of the gateway's trace rather than its own.
 	log.Printf("stable service (v1) listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, mux))
+	log.Fatal(http.ListenAndServe(":"+port, otelhttp.NewHandler(mux, "stable-service")))
 }
 
 func listProducts(w http.ResponseWriter, r *http.Request) {

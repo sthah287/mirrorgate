@@ -50,6 +50,20 @@ export default function ComparisonDetail({ id, onClose }: Props) {
             </dd>
             <dt>Request ID</dt>
             <dd className="mono">{comparison.request_id}</dd>
+            {comparison.trace_id && (
+              <>
+                <dt>Trace ID</dt>
+                <dd className="mono">
+                  <a
+                    href={`http://localhost:16686/trace/${comparison.trace_id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {comparison.trace_id}
+                  </a>
+                </dd>
+              </>
+            )}
             <dt>Result</dt>
             <dd>
               <OutcomeBadge outcome={comparison.outcome} />

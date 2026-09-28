@@ -1,0 +1,68 @@
+{
+  "strategy": "endpoint",
+  "sampling": {
+    "mode": "endpoint",
+    "target_rate": 0,
+    "rules": [
+      {
+        "pattern": "/api/products/*",
+        "rate": 0.5
+      },
+      {
+        "pattern": "/api/users/*",
+        "rate": 0.25
+      },
+      {
+        "pattern": "/health",
+        "rate": 0
+      }
+    ]
+  },
+  "traffic": {
+    "total_requests": 3001,
+    "test_duration_s": 27.7,
+    "throughput_rps": 108.4,
+    "failed_rate": 0,
+    "dropped_iterations": 0
+  },
+  "mirroring": {
+    "eligible": 3001,
+    "mirrored": 1243,
+    "skipped_by_sampling": 1758,
+    "skipped_in_flight": 0,
+    "actual_rate": 0.4142,
+    "events_published": 1243,
+    "publish_failures": 0,
+    "comparisons_stored": 1243
+  },
+  "client_latency_ms": {
+    "avg": 0.75,
+    "p50": 0.71,
+    "p95": 1.08,
+    "p99": 1.56,
+    "max": 3.76
+  },
+  "outcomes": {
+    "match": 974,
+    "different": 146,
+    "error": 123,
+    "slow_flagged": 0
+  },
+  "regressions": {
+    "detected": {
+      "price (product 12)": 146,
+      "status 500 (product 8)": 80,
+      "slow response (audio list)": 0,
+      "timeout (user 7)": 43
+    },
+    "missed": [
+      "slow response (audio list)"
+    ],
+    "seconds_to_first_detection": {
+      "price (product 12)": 0.3,
+      "status 500 (product 8)": 0.1,
+      "slow response (audio list)": null,
+      "timeout (user 7)": 0.7
+    }
+  }
+}

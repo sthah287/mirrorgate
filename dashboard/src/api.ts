@@ -1,4 +1,4 @@
-import type { Comparison, Deployment, Outcome, Stats } from "./types";
+import type { Comparison, Deployment, GatewayStats, Outcome, SamplingStats, Stats } from "./types";
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -9,7 +9,12 @@ async function getJSON<T>(path: string): Promise<T> {
 }
 
 export function fetchStats() {
-  return getJSON<{ deployment: Deployment; stats: Stats }>("/internal/stats");
+  return getJSON<{
+    deployment: Deployment;
+    stats: Stats;
+    gateway: GatewayStats;
+    sampling: SamplingStats;
+  }>("/internal/stats");
 }
 
 export function fetchComparisons(outcome: Outcome | "all") {

@@ -1,0 +1,53 @@
+{
+  "strategy": "random-25",
+  "sampling": {
+    "mode": "random",
+    "target_rate": 0.25,
+    "rules": null
+  },
+  "traffic": {
+    "total_requests": 3001,
+    "test_duration_s": 27.7,
+    "throughput_rps": 108.4,
+    "failed_rate": 0,
+    "dropped_iterations": 0
+  },
+  "mirroring": {
+    "eligible": 3001,
+    "mirrored": 702,
+    "skipped_by_sampling": 2299,
+    "skipped_in_flight": 0,
+    "actual_rate": 0.2339,
+    "events_published": 702,
+    "publish_failures": 0,
+    "comparisons_stored": 702
+  },
+  "client_latency_ms": {
+    "avg": 0.7,
+    "p50": 0.63,
+    "p95": 0.97,
+    "p99": 1.56,
+    "max": 30.98
+  },
+  "outcomes": {
+    "match": 520,
+    "different": 113,
+    "error": 69,
+    "slow_flagged": 27
+  },
+  "regressions": {
+    "detected": {
+      "price (product 12)": 79,
+      "status 500 (product 8)": 33,
+      "slow response (audio list)": 27,
+      "timeout (user 7)": 36
+    },
+    "missed": [],
+    "seconds_to_first_detection": {
+      "price (product 12)": 0.1,
+      "status 500 (product 8)": 1.7,
+      "slow response (audio list)": 0.9,
+      "timeout (user 7)": 2.3
+    }
+  }
+}

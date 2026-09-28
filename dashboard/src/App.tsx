@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchComparisons, fetchStats } from "./api";
-import type { Comparison, Deployment, Outcome, Stats } from "./types";
+import type { Comparison, Deployment, GatewayStats, Outcome, SamplingStats, Stats } from "./types";
 import SummaryCards from "./components/SummaryCards";
+import SamplingPanel from "./components/SamplingPanel";
 import ComparisonTable from "./components/ComparisonTable";
 import ComparisonDetail from "./components/ComparisonDetail";
 
@@ -16,6 +17,8 @@ const filters: { value: Outcome | "all"; label: string }[] = [
 
 export default function App() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [sampling, setSampling] = useState<SamplingStats | null>(null);
+  const [gateway, setGateway] = useState<GatewayStats | null>(null);
   const [deployment, setDeployment] = useState<Deployment | null>(null);
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
   const [filter, setFilter] = useState<Outcome | "all">("all");
@@ -27,6 +30,8 @@ export default function App() {
     try {
       const [statsRes, list] = await Promise.all([fetchStats(), fetchComparisons(filter)]);
       setStats(statsRes.stats);
+      setSampling(statsRes.sampling);
+      setGateway(statsRes.gateway);
       setDeployment(statsRes.deployment);
       setComparisons(list);
       setUpdatedAt(new Date());
@@ -67,6 +72,7 @@ export default function App() {
       </header>
 
       {stats && <SummaryCards stats={stats} />}
+      {sampling && gateway && <SamplingPanel sampling={sampling} gateway={gateway} />}
 
       <section className="panel">
         <div className="panel-header">

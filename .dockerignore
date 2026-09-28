@@ -1,0 +1,6 @@
+.git
+dashboard/node_modules
+dashboard/dist
+results
+**/*_test.go
+tests/
