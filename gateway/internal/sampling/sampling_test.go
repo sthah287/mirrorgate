@@ -15,7 +15,7 @@ func seeded() func() float64 {
 func TestFullModeMirrorsEverything(t *testing.T) {
 	s := NewWithRand(Config{Mode: Full, Rate: 1}, seeded())
 	for i := 0; i < 100; i++ {
-		if !s.Mirror("/api/products/1") {
+		if !s.Mirror("GET", "/api/products/1") {
 			t.Fatalf("request %d was skipped in full mode", i)
 		}
 	}
@@ -27,7 +27,7 @@ func TestFullModeMirrorsEverything(t *testing.T) {
 func TestZeroRateMirrorsNothing(t *testing.T) {
 	s := NewWithRand(Config{Mode: Random, Rate: 0}, seeded())
 	for i := 0; i < 100; i++ {
-		if s.Mirror("/api/products/1") {
+		if s.Mirror("GET", "/api/products/1") {
 			t.Fatalf("request %d was mirrored at rate 0", i)
 		}
 	}
@@ -43,7 +43,7 @@ func TestSeededRandomIsRepeatable(t *testing.T) {
 	for run := range counts {
 		s := NewWithRand(Config{Mode: Random, Rate: 0.25}, seeded())
 		for i := 0; i < 1000; i++ {
-			s.Mirror("/api/products/1")
+			s.Mirror("GET", "/api/products/1")
 		}
 		counts[run] = s.Stats().Mirrored
 	}
@@ -80,7 +80,7 @@ func TestEndpointRulesOverrideTheDefaultRate(t *testing.T) {
 		{"/api/orders", true},
 	}
 	for _, c := range cases {
-		if got := s.Mirror(c.path); got != c.want {
+		if got := s.Mirror("GET", c.path); got != c.want {
 			t.Errorf("Mirror(%q) = %v, want %v", c.path, got, c.want)
 		}
 	}
@@ -93,10 +93,10 @@ func TestFirstMatchingRuleWins(t *testing.T) {
 		Rules: []Rule{{Pattern: "/api/products/8", Rate: 0}, {Pattern: "/api/products/*", Rate: 1}},
 	}, seeded())
 
-	if s.Mirror("/api/products/8") {
+	if s.Mirror("GET", "/api/products/8") {
 		t.Error("the more specific rule should have skipped /api/products/8")
 	}
-	if !s.Mirror("/api/products/12") {
+	if !s.Mirror("GET", "/api/products/12") {
 		t.Error("/api/products/12 should fall through to the prefix rule")
 	}
 }

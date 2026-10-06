@@ -265,3 +265,19 @@ func TestSamplingIsReportedForTheDashboard(t *testing.T) {
 	fmt.Printf("sampling: mode=%s rate=%v mirrored=%d skipped=%d\n",
 		stats.Sampling.Mode, stats.Sampling.Rate, stats.Sampling.Mirrored, stats.Sampling.Skipped)
 }
+
+// The two services report different version strings on /health on purpose,
+// and the order endpoint generates an id, a timestamp, and a payment
+// reference per request. None of those are regressions. This checks the
+// ignore rules the worker is actually deployed with, which the unit tests
+// can't: they test the comparison code, not the configuration.
+func TestFieldsThatDifferByDesignAreNotReported(t *testing.T) {
+	gateway, admin := urls(t)
+
+	_, _, requestID := send(t, gateway, "/health")
+	c := waitFor(t, admin, requestID)
+
+	if c.Outcome != "match" {
+		t.Errorf("/health came out as %s (%v); the version field should be ignored", c.Outcome, c.Differences)
+	}
+}

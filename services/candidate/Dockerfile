@@ -2,7 +2,7 @@
 FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY shared/go.mod shared/go.sum ./shared/
-COPY services/candidate/go.mod ./services/candidate/
+COPY services/candidate/go.mod services/candidate/go.sum ./services/candidate/
 WORKDIR /src/services/candidate
 RUN go mod download
 COPY shared/ /src/shared/

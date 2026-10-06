@@ -69,6 +69,17 @@ func main() {
 	}
 	defer shutdownTracing(context.Background())
 
+	orders, err := newOrderStore(context.Background(),
+		envOr("ORDERS_DATABASE_URL", "postgres://mirrorgate:mirrorgate@localhost:5433/stable_app?sslmode=disable"),
+		envOr("PAYMENTS_URL", "http://localhost:9003/payments/charge"),
+		envOr("EMAIL_URL", "http://localhost:9003/notifications/email"),
+		false, os.Getenv("REQUIRE_SHADOW_HEADER") == "true")
+	if err != nil {
+		log.Fatalf("orders: %v", err)
+	}
+	mux.HandleFunc("POST /api/orders", orders.createOrder)
+	mux.HandleFunc("GET /internal/orders", orders.listOrders)
+
 	// otelhttp reads the traceparent header the gateway sent, so this service
 	// shows up as part of the gateway's trace rather than its own.
 	log.Printf("stable service (v1) listening on :%s", port)
@@ -122,4 +133,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("write response: %v", err)
 	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

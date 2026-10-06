@@ -1,4 +1,12 @@
-import type { Comparison, Deployment, GatewayStats, Outcome, SamplingStats, Stats } from "./types";
+import type {
+  Comparison,
+  Deployment,
+  EndpointRate,
+  GatewayStats,
+  Outcome,
+  SamplingStats,
+  Stats,
+} from "./types";
 
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -27,4 +35,10 @@ export function fetchComparisons(outcome: Outcome | "all") {
 
 export function fetchComparison(id: number) {
   return getJSON<Comparison>(`/internal/comparisons/${id}`);
+}
+
+// Only risk mode has per-endpoint rates to explain; the others return an
+// empty list.
+export function fetchSampling() {
+  return getJSON<{ sampling: SamplingStats; endpoints: EndpointRate[] }>("/internal/sampling");
 }

@@ -25,10 +25,11 @@ type Store interface {
 
 type Handler struct {
 	store Store
+	rules compare.Rules
 }
 
-func New(store Store) *Handler {
-	return &Handler{store: store}
+func New(store Store, rules compare.Rules) *Handler {
+	return &Handler{store: store, rules: rules}
 }
 
 // Handle compares one event and saves the result. Returning an error leaves
@@ -39,7 +40,7 @@ func (h *Handler) Handle(ctx context.Context, e event.Comparison) error {
 	ctx, span := tracer.Start(ctx, "process comparison")
 	defer span.End()
 
-	c := Result(e)
+	c := Result(e, h.rules)
 	span.SetAttributes(
 		attribute.String("mirrorgate.request_id", c.RequestID),
 		attribute.String("http.route", c.Path),
@@ -68,7 +69,7 @@ func (h *Handler) Handle(ctx context.Context, e event.Comparison) error {
 
 // Result runs the comparison for one event. It is separate from Handle so
 // tests can check the classification without a database.
-func Result(e event.Comparison) storage.Comparison {
+func Result(e event.Comparison, rules compare.Rules) storage.Comparison {
 	stable := compare.Response{
 		Status:  e.Stable.Status,
 		Body:    []byte(e.Stable.Body),
@@ -85,7 +86,7 @@ func Result(e event.Comparison) storage.Comparison {
 		candidate.Err = errors.New(e.CandidateError)
 	}
 
-	result := compare.Compare(stable, candidate)
+	result := rules.Compare(stable, candidate)
 	c := storage.Comparison{
 		RequestID:          e.RequestID,
 		TraceID:            e.TraceID,

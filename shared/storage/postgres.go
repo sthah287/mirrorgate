@@ -184,3 +184,47 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 	}
 	return st, nil
 }
+
+// EndpointRisk is the recent comparison history for one endpoint, used by the
+// gateway's risk-priority sampling.
+type EndpointRisk struct {
+	Method     string
+	Path       string
+	Mismatches int
+	Errors     int
+	Slow       int
+}
+
+// RecentRisk counts what went wrong per endpoint inside the window. Only
+// endpoints with at least one signal come back; everything else scores zero
+// anyway.
+func (s *Store) RecentRisk(ctx context.Context, window time.Duration) ([]EndpointRisk, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT method, path,
+		       count(*) FILTER (WHERE outcome = 'different'),
+		       count(*) FILTER (WHERE outcome = 'error'),
+		       count(*) FILTER (WHERE candidate_slow)
+		FROM request_comparisons
+		WHERE received_at > now() - make_interval(secs => $1)
+		GROUP BY method, path
+		HAVING count(*) FILTER (WHERE outcome <> 'match') > 0
+		    OR count(*) FILTER (WHERE candidate_slow) > 0`,
+		window.Seconds())
+	if err != nil {
+		return nil, fmt.Errorf("recent risk: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EndpointRisk
+	for rows.Next() {
+		var r EndpointRisk
+		if err := rows.Scan(&r.Method, &r.Path, &r.Mismatches, &r.Errors, &r.Slow); err != nil {
+			return nil, fmt.Errorf("scan risk row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("recent risk: %w", err)
+	}
+	return out, nil
+}

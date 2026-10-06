@@ -9,6 +9,7 @@ import (
 
 	"mirrorgate/comparison-worker/internal/consume"
 	"mirrorgate/shared/broker"
+	"mirrorgate/shared/compare"
 	"mirrorgate/shared/event"
 	"mirrorgate/shared/storage"
 	"mirrorgate/shared/tracing"
@@ -47,8 +48,14 @@ func run() error {
 	consumer := broker.NewConsumer(brokers, topic, group)
 	defer consumer.Close()
 
-	handler := consume.New(store)
-	slog.Info("consuming comparison events", "brokers", brokers, "topic", topic, "group", group)
+	rules, err := compare.ParseRules(os.Getenv("COMPARE_IGNORE_FIELDS"), os.Getenv("COMPARE_SLOW_THRESHOLD_MS"))
+	if err != nil {
+		return err
+	}
+
+	handler := consume.New(store, rules)
+	slog.Info("consuming comparison events", "brokers", brokers, "topic", topic, "group", group,
+		"ignore_fields", rules.IgnoreFields, "slow_threshold", rules.SlowThreshold)
 
 	if err := consumer.Run(ctx, handler.Handle); err != nil {
 		return err

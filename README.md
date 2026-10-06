@@ -4,7 +4,16 @@ A shadow traffic system for testing a new version of a backend service with real
 
 MirrorGate sits in front of a service. Every request goes to the current **stable** version and the client gets that response like normal. At the same time, MirrorGate sends a copy of the request to the **candidate** version, the two responses get compared, and the result is saved. The candidate's response is never returned to the client.
 
-Progress Report 1 was the first working version, where the gateway did the comparison itself. Progress Report 2 moved that work out of the gateway and onto a Kafka topic, added tracing across the services, and added traffic sampling so the project can start measuring how much mirrored traffic is actually needed to catch a regression.
+Progress Report 1 was the first working version, where the gateway did the comparison itself. Progress Report 2 moved that work out of the gateway and onto a Kafka topic, added tracing across the services, and added traffic sampling. Week 7 made the loose parts concrete: a fixed catalog of the faults being tested, written-down comparison rules with configurable ignored fields, safe shadowing of `POST` requests, risk-priority sampling, and a repeated experiment instead of one run per strategy.
+
+The documents that define the experiment are in `docs/`:
+
+| | |
+|---|---|
+| [docs/regression-catalog.md](docs/regression-catalog.md) | the five faults (R1-R5) and what counts as detecting each one |
+| [docs/comparison-rules.md](docs/comparison-rules.md) | what counts as a difference |
+| [docs/sampling-strategies.md](docs/sampling-strategies.md) | the four strategies, including how the risk score is calculated |
+| [docs/shadow-writes.md](docs/shadow-writes.md) | how a mirrored `POST` is kept from causing real side effects |
 
 ## Architecture
 
@@ -18,6 +27,11 @@ Progress Report 1 was the first working version, where the gateway did the compa
                     v             v  own 2s timeout, only if sampling says yes)
               Stable v1 (:9001)  Candidate v2 (:9002)
                     |             |
+                    |             |  writes go to separate databases, and
+                    |             |  outbound calls to separate endpoints
+                    |             v
+                    |      mock payment / email (:9003)
+                    |        live        sandbox
                     v             |
             response to client    |
                                   v
@@ -62,6 +76,14 @@ Added in Progress Report 2:
 - A k6 experiment that runs the same workload against each sampling strategy and writes real results to `results/`
 - A failure test script for the two new failure modes (worker down, broker down)
 
+Added in week 7, for the midterm:
+
+- **A fixed regression catalog**, R1 to R5, with stable IDs and a written rule for what counts as detecting each one. The faults are marked `REGRESSION (Rn)` in the candidate source
+- **Comparison rules that are written down and configurable.** Fields that are different on every request (`order_id`, `created_at`, `payment_reference`) can be ignored with `COMPARE_IGNORE_FIELDS`, and the latency rule has its own setting
+- **Safe `POST` shadowing.** `POST /api/orders` is mirrored. The candidate writes to its own database, calls sandbox endpoints on the mock payment and email services, and refuses any write that is not shadow traffic
+- **Risk-priority sampling**, a fourth strategy that scores each endpoint from recent results and raises its rate, with the score and the reasons visible on the dashboard and the internal API
+- **A repeated experiment**: 5 trials per strategy on the same workload and the same container CPU and memory limits, with means and standard deviations
+
 ## Project structure
 
 ```text
@@ -82,15 +104,22 @@ mirrorgate/
 │   └── tracing/              OTLP setup
 ├── services/
 │   ├── stable/               v1 test service
-│   └── candidate/            v2 test service with intentional regressions
+│   ├── candidate/            v2 test service with the R1-R5 faults
+│   └── mock-external/        stand-in payment and email services
 ├── dashboard/                React + TypeScript (Vite)
-├── db/init.sql               schema
+├── db/
+│   ├── init-app-databases.sql  stable_app and candidate_sandbox
+│   └── init.sql                comparison schema
+├── docs/                     catalog, comparison rules, sampling, shadow writes
 ├── experiments/
-│   ├── sampling.js           k6 workload
-│   ├── run.sh                runs every strategy
-│   ├── collect.py            merges k6 + gateway + database results
-│   └── summarize.py          builds summary.csv
-├── results/progress-report-2/  actual experiment output
+│   ├── sampling.js           week 5 k6 workload
+│   ├── run.sh                week 5 experiment, one run per strategy
+│   ├── midterm.js            week 7 workload, adds the order POST
+│   ├── run-midterm.sh        week 7 experiment, 5 trials per strategy
+│   ├── collect*.py           merge k6 + gateway + database results
+│   └── summarize*.py         build summary.csv and summary.md
+├── results/progress-report-2/  week 5 experiment output
+├── results/midterm/            week 7 experiment output
 ├── tests/                    end-to-end tests against the running stack
 ├── scripts/
 │   ├── demo.sh               one request per scenario + results table
@@ -118,12 +147,13 @@ docker compose up --build
 | Jaeger (traces) | http://localhost:16686 |
 | Stable service directly | http://localhost:9001 |
 | Candidate service directly | http://localhost:9002 |
+| Mock payment / email | http://localhost:9003/calls |
 | Redpanda (Kafka API) | localhost:19092 |
 | Postgres | localhost:5433 (user/password/db: `mirrorgate`) |
 
 Postgres is on 5433 instead of 5432 so it doesn't conflict with a local install. Redpanda advertises `redpanda:9092` inside the compose network and `localhost:19092` outside it.
 
-The schema in `db/init.sql` only runs when the Postgres volume is created, and PR2 added a `trace_id` column. If you are coming from the PR1 volume, reset it:
+Everything in `db/` runs only when the Postgres volume is first created, and that is also where the `stable_app` and `candidate_sandbox` databases come from. Coming from an older volume, reset it:
 
 ```bash
 docker compose down -v
@@ -141,15 +171,19 @@ docker compose up --build
 | `KAFKA_TOPIC` | `mirrorgate.comparisons` | |
 | `PORT` / `ADMIN_PORT` | `8080` / `8081` | proxy / internal API |
 | `SHADOW_TIMEOUT` | `2s` | max time for a candidate request |
-| `MIRROR_METHODS` | `GET` | comma separated |
 | `MAX_SHADOW_IN_FLIGHT` | `100` | extra requests aren't mirrored |
-| `SAMPLING_MODE` | `full` | `full`, `random`, or `endpoint` |
-| `SAMPLING_RATE` | `1` | 0 to 1, used by `random` and as the `endpoint` fallback |
+| `MIRROR_METHODS` | `GET,POST` | comma separated |
+| `SAMPLING_MODE` | `full` | `full`, `random`, `endpoint`, or `risk` |
+| `SAMPLING_RATE` | `1` | 0 to 1, used by `random` and as the `endpoint` fallback. Ignored in `risk` mode |
 | `SAMPLING_RULES` | | per-path rates for `endpoint` mode |
+| `RISK_WINDOW` | `10m` | how far back `risk` mode looks for mismatches |
+| `RISK_REFRESH` | `5s` | how often it re-reads them from Postgres |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | | empty turns tracing off |
 | `STABLE_VERSION` / `CANDIDATE_VERSION` | `v1` / `v2` | labels shown on the dashboard |
 
-Worker configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `KAFKA_GROUP`, `OTEL_EXPORTER_OTLP_ENDPOINT`.
+Worker configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `KAFKA_GROUP`, `OTEL_EXPORTER_OTLP_ENDPOINT`, plus the comparison rules `COMPARE_IGNORE_FIELDS` and `COMPARE_SLOW_THRESHOLD_MS`.
+
+The gateway, stable, and candidate containers have fixed CPU and memory limits in `docker-compose.yml` (2 CPUs and 1 GB for the gateway, 1 CPU and 512 MB each for the services). They are there so every experiment run gets the same budget.
 
 ## Sampling
 
@@ -159,6 +193,9 @@ Mirroring every request doubles the load on the backend. Sampling is the part of
 # mirror everything (default)
 SAMPLING_MODE=full docker compose up -d gateway
 
+# raise the rate on endpoints that have recently gone wrong
+SAMPLING_MODE=risk docker compose up -d gateway
+
 # mirror a quarter of eligible requests
 SAMPLING_MODE=random SAMPLING_RATE=0.25 docker compose up -d gateway
 
@@ -167,6 +204,8 @@ SAMPLING_MODE=endpoint SAMPLING_RATE=0 \
   SAMPLING_RULES='/api/products*=0.5,/api/users*=0.25,/health=0' \
   docker compose up -d gateway
 ```
+
+`risk` mode works out its own rate per endpoint, between 10% and 100%, from recent mismatches, errors, slowness, how rare the endpoint is, and whether it is a write. The full table is in [docs/sampling-strategies.md](docs/sampling-strategies.md), and `GET /internal/sampling` shows the current score and the reasons behind it for every endpoint.
 
 A rule pattern is either an exact path or a prefix ending in `*`, and the first matching rule wins, so put the specific ones first. Watch the slash: `/api/products/*` matches `/api/products/12` but **not** `/api/products`, so a rule set written that way silently stops mirroring the collection endpoint. The experiment below caught exactly that.
 
@@ -210,17 +249,31 @@ Tracing is off when `OTEL_EXPORTER_OTLP_ENDPOINT` is empty, which keeps `go test
 
 ## Demo endpoints
 
-The candidate service has a few regressions on purpose (search for `REGRESSION` in `services/candidate/main.go`):
+The candidate service has five faults in it on purpose. They are listed in [docs/regression-catalog.md](docs/regression-catalog.md) and marked `REGRESSION (Rn)` in `services/candidate/main.go` and `services/candidate/orders.go`:
 
-| Request | Stable v1 | Candidate v2 | MirrorGate result |
-|---|---|---|---|
-| `GET /api/products/1` | 200 | 200, same body | `match` |
-| `GET /api/products/12` | 200, price 49.99 | 200, price **59.99** | `different` (`price: 49.99 != 59.99`) |
-| `GET /api/products/8` | 200 | **500** | `error` |
-| `GET /api/products?category=audio` | ~1ms | **~400ms** | `match` + `SLOW` |
-| `GET /api/users/7` | ~1ms | **hangs 3s** | `error` (`timed out after 2s`) |
-| `GET /api/users/3` | 200 | 200, same data but different key order and indentation | `match` |
-| `GET /api/products/99` | 404 | 404 | `match` |
+| | Request | Stable v1 | Candidate v2 | MirrorGate result |
+|---|---|---|---|---|
+| R1 | `GET /api/products/12` | 200, price 49.99 | 200, price **59.99** | `different` (`price: 49.99 != 59.99`) |
+| R2 | `GET /api/products/8` | 200 | **500** | `error` |
+| R3 | `GET /api/products?category=audio` | ~1ms | **~400ms** | `match` + `SLOW` |
+| R4 | `GET /api/users/7` | ~1ms | **hangs 3s** | `error` (`timed out after 2s`) |
+| R5 | `POST /api/orders` | total 184.99 | total **179.99**, shipping left out | `different` (`total: 184.99 != 179.99`) |
+| | `GET /api/products/1` | 200 | 200, same body | `match` |
+| | `GET /api/users/3` | 200 | 200, same data but different key order and indentation | `match` |
+| | `GET /api/products/99` | 404 | 404 | `match` |
+
+R5 is a write, so it is the one that needs the sandbox:
+
+```bash
+curl -X POST http://localhost:8080/api/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"customer":"sam@example.com","items":[{"product_id":4,"quantity":1}]}'
+
+# one real order, one sandbox order, one live charge, one sandbox charge
+curl -s http://localhost:9001/internal/orders   # stable_app
+curl -s http://localhost:9002/internal/orders   # candidate_sandbox
+curl -s http://localhost:9003/calls             # what the mock services were asked to do
+```
 
 In every case the client gets the stable response:
 
@@ -244,9 +297,9 @@ Generate more traffic for the dashboard:
 
 On Windows run the scripts from Git Bash.
 
-## The sampling experiment
+## The week 5 sampling experiment
 
-The question is: if MirrorGate mirrors less traffic, does it still catch the regressions, and does it cost less?
+The question is: if MirrorGate mirrors less traffic, does it still catch the regressions, and does it cost less? This section is the week 5 version, kept because the midterm experiment below builds on it.
 
 ```bash
 docker compose up -d
@@ -293,6 +346,93 @@ So about 0.1 ms at the median and 0.5 ms at p99 for mirroring everything. Small,
 
 This is an early experiment on one laptop, with one repeat per configuration. It is enough to show the harness works and to give a baseline, not enough to put error bars on anything.
 
+## The midterm experiment
+
+Week 5 ran each strategy once. This one runs each of six strategies five
+times on the same workload, with the same container CPU and memory limits and
+the same reset before every run. What each number means and what is held
+constant is in [docs/evaluation-measures.md](docs/evaluation-measures.md).
+
+```bash
+docker compose up -d
+./experiments/run-midterm.sh          # 30 runs, about half an hour
+python experiments/chart_midterm.py
+```
+
+The workload is `experiments/midterm.js`: 3000 requests at a constant 100 per
+second, in a fixed sequence, carrying the five faults from the catalog. One
+request in a hundred is the order `POST`, so R5 is deliberately the rare one.
+
+Results are in `results/midterm/`, one JSON per run plus `summary.csv`,
+`summary.md`, and `strategies.png`.
+
+### Cost
+
+| Strategy | Mirrored | Actual rate | Regressions found |
+|---|---|---|---|
+| full (100%) | 3000 / 3000 | 100.0% (sd 0.0) | 5.0 of 5 |
+| random 50% | 1510 / 3000 | 50.3% (sd 0.9) | 5.0 of 5 |
+| random 25% | 745 / 3001 | 24.8% (sd 0.4) | 5.0 of 5 |
+| random 10% | 313 / 3001 | 10.4% (sd 0.3) | 5.0 of 5 |
+| endpoint rules | 1268 / 3000 | 42.3% (sd 1.0) | 5.0 of 5 |
+| risk-priority | 406 / 3000 | 13.5% (sd 0.6) | 5.0 of 5 |
+
+### Detection speed, in requests until the fault was first caught
+
+| Strategy | R1 price | R2 500 | R3 slow | R4 timeout | R5 order total |
+|---|---|---|---|---|---|
+| full (100%) | 11 | 13 | 14 | 15 | 0 |
+| random 50% | 18 ± 11 | 20 ± 11 | 33 ± 36 | 22 ± 10 | 139 ± 113 |
+| random 25% | 20 ± 12 | 34 ± 17 | 35 ± 24 | 72 ± 37 | 357 ± 320 |
+| random 10% | 181 ± 221 | 171 ± 84 | 95 ± 71 | 305 ± 235 | 1190 ± 469 |
+| endpoint rules | 11 ± 1 | 24 ± 26 | 33 ± 20 | 86 ± 51 | 159 ± 229 |
+| risk-priority | 83 ± 61 | 88 ± 61 | 218 ± 148 | 94 ± 74 | 355 ± 133 |
+
+### What this run actually shows
+
+**Every strategy found all five faults, every time.** Detection rate is 100%
+across the board, including random 10%. At 3000 requests even the rarest
+fault is hit 30 times, so a one-in-ten sample lands on it eventually. The
+detection rate stopped being the interesting measure and detection speed took
+over. Making the faults rare enough to actually be missed is the next
+experiment.
+
+**Client latency is flat.** p50 sits between 0.53 and 0.61 ms and p95 between
+0.96 and 1.03 ms across every strategy, and the differences are inside the
+run-to-run spread. That is the expected result rather than a surprise: the
+candidate call and the publish both happen after the client already has its
+response.
+
+**Risk-priority costs about what random 10% costs, and is only clearly better
+in one place.** It mirrored 13.5% against random 10%'s 10.4%. On R5, the rare
+write endpoint, it needed 355 ± 133 requests against 1190 ± 469, so roughly a
+third of the traffic for the same catch. On R1 through R4 the two overlap
+inside their standard deviations, so this run does not separate them there.
+The one place it is clearly behind is against random 25%, which catches
+everything except R5 faster, because risk-priority starts every run cold: with
+no history, every read endpoint sits at the 10% floor until something has
+already gone wrong once.
+
+So the honest summary is that the scoring buys early attention on write and
+rare endpoints, which is what the rules were written for, and buys nothing
+measurable on busy read endpoints that random sampling hits anyway.
+
+**Shadow write isolation held in all 30 runs.** Every run checks that live
+payment calls equal the number of orders the client sent, and that sandbox
+payment calls equal the number of orders mirrored. It is in each run file as
+`side_effects.isolation_ok`.
+
+**The run found a noisy field.** The first full run reported 475 differences
+when the faults only explain 327. The other 148 were all `/health`: the two
+services report `"version":"v1"` and `"v2"` on purpose. `version` went onto
+`COMPARE_IGNORE_FIELDS` and the experiment was re-run from scratch.
+
+### The week 5 experiment
+
+`./experiments/run.sh` and `results/progress-report-2/` are still here. That
+one is a single run per strategy on a workload without the write endpoint, and
+it is what the earlier table below describes.
+
 ## Failure scenarios
 
 ```bash
@@ -332,29 +472,35 @@ What's covered:
 - 100% sampling mirrors everything, 0% mirrors nothing, a seeded generator gives repeatable decisions, endpoint rules override the fallback rate, and bad configuration is rejected instead of defaulted
 - the comparison event survives a JSON round trip, and the trace context survives Kafka headers
 - the worker classifies every one of the demo scenarios correctly from an event, and a failed save is returned so the offset isn't committed
-- end to end against the real containers: all seven demo scenarios come out with the right outcome, the client always gets the stable body while the stored candidate body differs, and the gateway counters agree with what's in Postgres
+- comparison rules: ignored fields are skipped by name and by path, a real change in the same body is still caught, the latency threshold is configurable, and bad settings are rejected
+- risk-priority scoring: a quiet endpoint stays at the floor, a recent mismatch or candidate error raises the rate, writes and rare endpoints are prioritised, the worst case reaches 100%, traffic counts age out, and the reasons shown on the dashboard match the score
+- shadow writes: the client gets the stable order, the candidate's write lands only in the sandbox database, the mock records exactly one live charge and one sandbox charge, the candidate refuses a write without the shadow header, and a failed order doesn't affect the client
+- end to end against the real containers: all demo scenarios come out with the right outcome, fields that differ by design aren't reported, the client always gets the stable body while the stored candidate body differs, and the gateway counters agree with what's in Postgres
 
 ## Current limitations
 
-- Only `GET` is mirrored by default. `POST`/`PUT`/`DELETE` can be enabled, but nothing stops the candidate from causing real side effects
+- `POST /api/orders` is the only write that exists. `PUT`, `PATCH`, and `DELETE` are allowed by `MIRROR_METHODS` and scored as writes, but no endpoint uses them, so that path is untested
+- The sandbox is two databases in one Postgres container and a mock payment service. It proves the candidate writes nowhere the users can see, but pointing a candidate at a real provider's sandbox is a configuration promise, and a wrong environment variable would still be a real charge
 - **Publishing is at-most-once.** There is no outbox or retry, so a broker outage can lose comparisons. The client is never affected, and the failures are counted, but the count is an upper bound rather than an exact loss number
 - **Consuming is at-least-once.** Offsets are committed after the save, so an event can be processed twice. `SaveComparison` is idempotent on `request_id` to absorb that
 - Responses are fully buffered in memory, so very large or streaming responses aren't a good fit yet
-- No way to ignore fields that are always different, like timestamps or generated IDs
+- Ignored fields are matched by exact name or exact path. No wildcards, no regular expressions
+- Risk mode starts cold: after a restart it has no history, so it cannot prioritise an endpoint until something has already gone wrong there once. It can also starve itself, since an endpoint sampled at 10% may never produce the mismatch that would raise its rate. The rare-endpoint rule is what partly covers this
+- Risk scores are keyed by exact path, so `/api/products/1` and `/api/products/2` are separate endpoints. Grouping by route template is the fix
+- Risk signals are polled from Postgres every 5 seconds, so the rate reacts a few seconds after the worker stores a result. The rarity counts are the gateway's own and reset when it restarts
 - JSON numbers are compared as float64
 - Sampling counters are in memory, so they reset when the gateway restarts. Skipped requests are counted but not recorded anywhere durable
 - One partition on the topic and one worker. Nothing has been tested with a consumer group bigger than one
-- The experiment is one run per configuration on a laptop, with no repeats
+- The experiment is 5 trials per strategy on one laptop. Five faults is a small sample, so a detection rate of 80% means four out of five, not a precise probability
+- CPU and memory are not measured. The containers have fixed limits instead, so no strategy can use more than another
 - The internal API has no authentication
 - The stable/candidate services are simple test services with hardcoded data
 
 ## Next steps
 
 - An outbox so a broker outage can't lose comparisons, instead of counting failures and hoping
-- Handling `POST`/`PUT` safely (side-effect isolation)
-- Ignore rules for noisy fields like timestamps and generated IDs
-- Record requests and replay them against a candidate later
+- A workload where the regressions are rare enough that sampling actually starts missing them, so the strategies separate more than they do at 3000 requests
+- Request replay: record traffic and run it against a candidate later, instead of only mirroring live
+- Fault injection on the candidate rather than faults hardcoded in its source
 - More than one partition and more than one worker, to see whether the comparison stage actually scales out
-- A fuller experiment: repeated runs, more sampling rates, and a workload where the regression is rare enough that sampling actually starts missing it
-- Fault injection on the candidate rather than hardcoded regressions
 - Kubernetes deployment

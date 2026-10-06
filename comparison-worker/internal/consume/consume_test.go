@@ -90,7 +90,7 @@ func TestResultClassifiesEvents(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := Result(c.e)
+			got := Result(c.e, compare.DefaultRules())
 			if got.Outcome != c.outcome {
 				t.Errorf("outcome = %s, want %s (differences: %v)", got.Outcome, c.outcome, got.Differences)
 			}
@@ -111,7 +111,7 @@ func TestCandidateStatusIsNilAfterAnError(t *testing.T) {
 		Stable:         event.Response{Status: 200, LatencyMs: 1},
 		Candidate:      event.Response{LatencyMs: 2000},
 		CandidateError: "timed out after 2s",
-	})
+	}, compare.DefaultRules())
 	if withError.CandidateStatus != nil {
 		t.Errorf("candidate status = %d, want nil", *withError.CandidateStatus)
 	}
@@ -119,7 +119,7 @@ func TestCandidateStatusIsNilAfterAnError(t *testing.T) {
 	answered := Result(event.Comparison{
 		Stable:    event.Response{Status: 200, Body: `{}`, LatencyMs: 1},
 		Candidate: event.Response{Status: 404, Body: `{}`, LatencyMs: 1},
-	})
+	}, compare.DefaultRules())
 	if answered.CandidateStatus == nil || *answered.CandidateStatus != 404 {
 		t.Errorf("candidate status = %v, want 404", answered.CandidateStatus)
 	}
@@ -129,7 +129,7 @@ func TestHandleSavesTheComparison(t *testing.T) {
 	store := &fakeStore{}
 	received := time.Date(2026, 9, 20, 14, 30, 0, 0, time.UTC)
 
-	err := New(store).Handle(context.Background(), event.Comparison{
+	err := New(store, compare.DefaultRules()).Handle(context.Background(), event.Comparison{
 		RequestID:  "REQ123",
 		TraceID:    "4bf92f3577b34da6a3ce929d0e0e4736",
 		Method:     "GET",
@@ -165,7 +165,7 @@ func TestHandleSavesTheComparison(t *testing.T) {
 // event gets retried instead of disappearing.
 func TestHandleReturnsSaveErrors(t *testing.T) {
 	store := &fakeStore{fail: errors.New("connection refused")}
-	err := New(store).Handle(context.Background(), event.Comparison{
+	err := New(store, compare.DefaultRules()).Handle(context.Background(), event.Comparison{
 		Stable:    event.Response{Status: 200, Body: `{}`},
 		Candidate: event.Response{Status: 200, Body: `{}`},
 	})

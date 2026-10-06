@@ -13,6 +13,8 @@ import (
 	"mirrorgate/shared/storage"
 )
 
+const maxExplainedEndpoints = 50
+
 type Deployment struct {
 	StableVersion    string `json:"stable_version"`
 	CandidateVersion string `json:"candidate_version"`
@@ -28,6 +30,7 @@ type gateway interface {
 
 type sampler interface {
 	Stats() sampling.Stats
+	Explain() []sampling.EndpointRate
 }
 
 type API struct {
@@ -45,6 +48,7 @@ func (a *API) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /internal/health", a.health)
 	mux.HandleFunc("GET /internal/stats", a.stats)
+	mux.HandleFunc("GET /internal/sampling", a.sampling)
 	mux.HandleFunc("GET /internal/comparisons", a.listComparisons)
 	mux.HandleFunc("GET /internal/comparisons/{id}", a.getComparison)
 	return mux
@@ -69,6 +73,25 @@ func (a *API) stats(w http.ResponseWriter, r *http.Request) {
 		"stats":      st,
 		"gateway":    a.gateway.Stats(),
 		"sampling":   a.sampler.Stats(),
+	})
+}
+
+// sampling explains the current per-endpoint rates. It is empty unless the
+// gateway is running in risk mode, where the rate moves on its own.
+func (a *API) sampling(w http.ResponseWriter, r *http.Request) {
+	endpoints := a.sampler.Explain()
+	if endpoints == nil {
+		endpoints = []sampling.EndpointRate{}
+	}
+	// Explain is sorted by rate, so the interesting endpoints are at the
+	// front. Capped because a service with ids in the path has one entry per
+	// id and the dashboard only shows the top few anyway.
+	if len(endpoints) > maxExplainedEndpoints {
+		endpoints = endpoints[:maxExplainedEndpoints]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sampling":  a.sampler.Stats(),
+		"endpoints": endpoints,
 	})
 }
 

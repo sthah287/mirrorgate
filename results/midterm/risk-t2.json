@@ -1,0 +1,390 @@
+{
+  "run": "risk-t2",
+  "strategy": "risk",
+  "trial": 2,
+  "mode": "risk",
+  "workload": {
+    "script": "experiments/midterm.js",
+    "rate_per_s": 100.0,
+    "duration": "30s",
+    "total_requests": 3001
+  },
+  "sampling": {
+    "mode": "risk",
+    "eligible": 3001,
+    "mirrored": 426,
+    "skipped": 2575,
+    "actual_rate_pct": 14.2,
+    "published": 426,
+    "publish_failed": 0,
+    "skipped_in_flight": 0,
+    "endpoints": [
+      {
+        "endpoint": "POST /api/orders",
+        "requests": 31,
+        "share": 0.010329890036654448,
+        "score": 7,
+        "rate": 1,
+        "reasons": [
+          "+3 recent mismatch",
+          "+2 rare endpoint",
+          "+2 write request"
+        ],
+        "signal": {
+          "mismatches": 28,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/12",
+        "requests": 296,
+        "share": 0.09863378873708764,
+        "score": 3,
+        "rate": 0.25,
+        "reasons": [
+          "+3 recent mismatch"
+        ],
+        "signal": {
+          "mismatches": 69,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/8",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 3,
+        "rate": 0.25,
+        "reasons": [
+          "+3 recent candidate error"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 32,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/7",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 3,
+        "rate": 0.25,
+        "reasons": [
+          "+3 recent candidate error"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 36,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/4",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/5",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/6",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/7",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/3",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/11",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/1",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/10",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/9",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/2",
+        "requests": 149,
+        "share": 0.04965011662779074,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/3",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /health",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/1",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 1,
+        "rate": 0.1,
+        "reasons": [
+          "+1 recent latency regression"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 14
+        }
+      },
+      {
+        "endpoint": "GET /api/users/2",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/99",
+        "requests": 148,
+        "share": 0.04931689436854382,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      }
+    ]
+  },
+  "stored": {
+    "total": 426,
+    "matched": 261,
+    "different": 97,
+    "errors": 68,
+    "slow": 14,
+    "orders_mirrored": 28
+  },
+  "detection": {
+    "regressions_detected": 5,
+    "regressions_total": 5,
+    "detection_rate_pct": 100.0,
+    "slowest_first_detection_s": 3.53,
+    "per_regression": {
+      "R1": {
+        "detected": true,
+        "hits": 69,
+        "first_detection_s": 0.67,
+        "requests_until_detection": 67
+      },
+      "R2": {
+        "detected": true,
+        "hits": 32,
+        "first_detection_s": 0.49,
+        "requests_until_detection": 49
+      },
+      "R3": {
+        "detected": true,
+        "hits": 14,
+        "first_detection_s": 3.53,
+        "requests_until_detection": 353
+      },
+      "R4": {
+        "detected": true,
+        "hits": 36,
+        "first_detection_s": 0.91,
+        "requests_until_detection": 91
+      },
+      "R5": {
+        "detected": true,
+        "hits": 28,
+        "first_detection_s": 1.96,
+        "requests_until_detection": 196
+      }
+    }
+  },
+  "latency_ms": {
+    "p50": 0.736,
+    "p95": 1.071,
+    "p99": 3.014,
+    "avg": 0.77,
+    "max": 8.425
+  },
+  "side_effects": {
+    "orders_sent_by_client": 31,
+    "orders_mirrored": 28,
+    "calls": {
+      "live_email": 31,
+      "live_payment": 31,
+      "sandbox_email": 28,
+      "sandbox_payment": 28
+    },
+    "isolation_ok": true
+  }
+}

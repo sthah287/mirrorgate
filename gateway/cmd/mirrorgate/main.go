@@ -39,6 +39,14 @@ func run() error {
 	if err != nil {
 		return errors.New("MAX_SHADOW_IN_FLIGHT must be a number")
 	}
+	riskWindow, err := time.ParseDuration(env("RISK_WINDOW", "10m"))
+	if err != nil {
+		return errors.New("RISK_WINDOW must be a duration like 10m")
+	}
+	riskRefresh, err := time.ParseDuration(env("RISK_REFRESH", "5s"))
+	if err != nil {
+		return errors.New("RISK_REFRESH must be a duration like 5s")
+	}
 
 	sampler, err := sampling.Parse(os.Getenv("SAMPLING_MODE"), os.Getenv("SAMPLING_RATE"), os.Getenv("SAMPLING_RULES"))
 	if err != nil {
@@ -98,6 +106,13 @@ func run() error {
 	proxyServer := &http.Server{Addr: ":" + env("PORT", "8080"), Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	adminServer := &http.Server{Addr: ":" + env("ADMIN_PORT", "8081"), Handler: internalAPI.Routes(), ReadHeaderTimeout: 5 * time.Second}
 
+	sampleStats := sampler.Stats()
+	// Started before the servers so the first read of the risk signals
+	// happens before any traffic arrives.
+	if sampleStats.Mode == sampling.Risk {
+		go refreshRisk(ctx, store, sampler, riskWindow, riskRefresh)
+	}
+
 	errs := make(chan error, 2)
 	for _, srv := range []*http.Server{proxyServer, adminServer} {
 		go func() {
@@ -107,7 +122,6 @@ func run() error {
 			}
 		}()
 	}
-	sampleStats := sampler.Stats()
 	slog.Info("mirroring traffic", "stable", cfg.StableURL, "candidate", cfg.CandidateURL,
 		"shadow_timeout", cfg.ShadowTimeout, "methods", cfg.MirrorMethods,
 		"sampling_mode", sampleStats.Mode, "sampling_rate", sampleStats.Rate)
@@ -137,4 +151,45 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// refreshRisk keeps risk-priority sampling up to date with what the worker
+// has stored. The gateway can't score an endpoint from its own memory,
+// because it never sees the comparison result; that happens downstream.
+func refreshRisk(ctx context.Context, store *storage.Store, sampler *sampling.Sampler, window, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+
+	// The signals come from Postgres, but the traffic counts behind the
+	// rare-endpoint rule are the gateway's own, so they have to be aged out
+	// here or an endpoint that was busy once stays busy forever.
+	rotate := time.NewTicker(window)
+	defer rotate.Stop()
+
+	for {
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		rows, err := store.RecentRisk(readCtx, window)
+		cancel()
+		if err != nil {
+			slog.Warn("refresh risk signals", "err", err)
+		} else {
+			signals := make(map[string]sampling.Signal, len(rows))
+			for _, r := range rows {
+				signals[strings.ToUpper(r.Method)+" "+r.Path] = sampling.Signal{
+					Mismatches: r.Mismatches,
+					Errors:     r.Errors,
+					Slow:       r.Slow,
+				}
+			}
+			sampler.UpdateSignals(signals)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-rotate.C:
+			sampler.RotateTraffic()
+		case <-ticker.C:
+		}
+	}
 }

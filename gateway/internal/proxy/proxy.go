@@ -41,9 +41,10 @@ type Publisher interface {
 	Publish(ctx context.Context, e event.Comparison) error
 }
 
-// Sampler decides whether one request gets mirrored.
+// Sampler decides whether one request gets mirrored. The method is part of
+// the decision because risk-priority treats writes as higher risk.
 type Sampler interface {
-	Mirror(path string) bool
+	Mirror(method, path string) bool
 }
 
 type Config struct {
@@ -171,7 +172,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// for a request copy, a goroutine, or a candidate call.
 	if p.mirrorMethods[r.Method] {
 		p.eligible.Add(1)
-		if p.sampler.Mirror(r.URL.Path) {
+		if p.sampler.Mirror(r.Method, r.URL.Path) {
 			stableDone = p.startShadow(r, body, requestID)
 		}
 	}

@@ -1,0 +1,87 @@
+{
+  "run": "random-10-t2",
+  "strategy": "random-10",
+  "trial": 2,
+  "mode": "random",
+  "workload": {
+    "script": "experiments/midterm.js",
+    "rate_per_s": 100.0,
+    "duration": "30s",
+    "total_requests": 3000
+  },
+  "sampling": {
+    "mode": "random",
+    "eligible": 3000,
+    "mirrored": 303,
+    "skipped": 2697,
+    "actual_rate_pct": 10.1,
+    "published": 303,
+    "publish_failed": 0,
+    "skipped_in_flight": 0,
+    "endpoints": []
+  },
+  "stored": {
+    "total": 303,
+    "matched": 256,
+    "different": 26,
+    "errors": 21,
+    "slow": 13,
+    "orders_mirrored": 4
+  },
+  "detection": {
+    "regressions_detected": 5,
+    "regressions_total": 5,
+    "detection_rate_pct": 100.0,
+    "slowest_first_detection_s": 14.96,
+    "per_regression": {
+      "R1": {
+        "detected": true,
+        "hits": 22,
+        "first_detection_s": 3.11,
+        "requests_until_detection": 311
+      },
+      "R2": {
+        "detected": true,
+        "hits": 11,
+        "first_detection_s": 1.7,
+        "requests_until_detection": 170
+      },
+      "R3": {
+        "detected": true,
+        "hits": 13,
+        "first_detection_s": 1.71,
+        "requests_until_detection": 171
+      },
+      "R4": {
+        "detected": true,
+        "hits": 10,
+        "first_detection_s": 7.18,
+        "requests_until_detection": 718
+      },
+      "R5": {
+        "detected": true,
+        "hits": 4,
+        "first_detection_s": 14.96,
+        "requests_until_detection": 1496
+      }
+    }
+  },
+  "latency_ms": {
+    "p50": 0.542,
+    "p95": 0.967,
+    "p99": 2.873,
+    "avg": 0.644,
+    "max": 14.246
+  },
+  "side_effects": {
+    "orders_sent_by_client": 30,
+    "orders_mirrored": 4,
+    "calls": {
+      "live_email": 30,
+      "live_payment": 30,
+      "sandbox_email": 4,
+      "sandbox_payment": 4
+    },
+    "isolation_ok": true
+  }
+}

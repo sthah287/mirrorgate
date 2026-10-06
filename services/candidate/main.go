@@ -14,9 +14,9 @@ import (
 	"mirrorgate/shared/tracing"
 )
 
-// The candidate is a copy of the stable service with a few intentional
-// regressions so MirrorGate has something real to catch. Each one is marked
-// with "REGRESSION" and listed in the README.
+// The candidate is a copy of the stable service with a fixed set of faults
+// built in, so MirrorGate has something real to catch. Each one is marked
+// with its catalog ID (R1..R5) and documented in docs/regression-catalog.md.
 
 type Product struct {
 	ID       int     `json:"id"`
@@ -46,7 +46,7 @@ var products = []Product{
 	{9, "HDMI Cable 2m", 9.99, "accessories"},
 	{10, "Desk Lamp", 24.99, "office"},
 	{11, "Bluetooth Speaker", 45.00, "audio"},
-	// REGRESSION (body): price changed from 49.99 to 59.99.
+	// REGRESSION (R1): price changed from 49.99 to 59.99.
 	{12, "Wireless Keyboard", 59.99, "input"},
 }
 
@@ -77,6 +77,17 @@ func main() {
 	}
 	defer shutdownTracing(context.Background())
 
+	orders, err := newOrderStore(context.Background(),
+		envOr("ORDERS_DATABASE_URL", "postgres://mirrorgate:mirrorgate@localhost:5433/candidate_sandbox?sslmode=disable"),
+		envOr("PAYMENTS_URL", "http://localhost:9003/sandbox/payments/charge"),
+		envOr("EMAIL_URL", "http://localhost:9003/sandbox/notifications/email"),
+		true, os.Getenv("REQUIRE_SHADOW_HEADER") == "true")
+	if err != nil {
+		log.Fatalf("orders: %v", err)
+	}
+	mux.HandleFunc("POST /api/orders", orders.createOrder)
+	mux.HandleFunc("GET /internal/orders", orders.listOrders)
+
 	// otelhttp reads the traceparent header the gateway sent, so this service
 	// shows up as part of the gateway's trace rather than its own.
 	log.Printf("candidate service (v2) listening on :%s", port)
@@ -84,7 +95,7 @@ func main() {
 }
 
 func listProducts(w http.ResponseWriter, r *http.Request) {
-	// REGRESSION (latency): same response as v1, but about 400ms slower.
+	// REGRESSION (R3): same response as v1, but about 400ms slower.
 	time.Sleep(400 * time.Millisecond)
 
 	category := r.URL.Query().Get("category")
@@ -104,7 +115,7 @@ func getProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// REGRESSION (error): product 8 fails in v2 while v1 returns it normally.
+	// REGRESSION (R2): product 8 fails in v2 while v1 returns it normally.
 	if id == 8 {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "inventory lookup failed"})
 		return
@@ -126,7 +137,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// REGRESSION (timeout): user 7 hangs for 3s, longer than the gateway's
+	// REGRESSION (R4): user 7 hangs for 3s, longer than the gateway's
 	// default shadow timeout of 2s.
 	if id == 7 {
 		time.Sleep(3 * time.Second)
@@ -155,4 +166,11 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("write response: %v", err)
 	}
+}
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }

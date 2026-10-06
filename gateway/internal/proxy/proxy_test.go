@@ -48,7 +48,7 @@ func (f *fakePublisher) next(t *testing.T) event.Comparison {
 // tests in the sampling package.
 type fixedSampler bool
 
-func (f fixedSampler) Mirror(string) bool { return bool(f) }
+func (f fixedSampler) Mirror(string, string) bool { return bool(f) }
 
 const (
 	mirrorAll  = fixedSampler(true)
@@ -339,5 +339,42 @@ func TestSkippedRequestNeverReachesCandidate(t *testing.T) {
 	st := p.Stats()
 	if st.Eligible != 1 || st.Mirrored != 0 || st.Published != 0 {
 		t.Errorf("stats = %+v, want eligible=1 with nothing mirrored", st)
+	}
+}
+
+// A write is the case where a broken candidate would be most tempting to let
+// through. The client's order has to come back from stable regardless, and
+// the failure is still recorded.
+func TestCandidateFailureOnAWriteDoesNotAffectTheClient(t *testing.T) {
+	stable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		io.WriteString(w, `{"order_id":"ord_1","total":184.99}`)
+	}))
+	defer stable.Close()
+
+	// A candidate that is down: nothing is listening on this address.
+	candidate := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	candidate.Close()
+
+	publisher := newFakePublisher()
+	p := newTestProxy(t, stable.URL, candidate.URL, publisher, Config{MirrorMethods: []string{"POST"}})
+
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/orders",
+		strings.NewReader(`{"customer":"sam@example.com","items":[{"product_id":4,"quantity":1}]}`)))
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 from stable", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "184.99") {
+		t.Errorf("body = %s, want the stable order", rec.Body.String())
+	}
+
+	e := publisher.next(t)
+	if e.CandidateError == "" {
+		t.Error("the candidate failure was not recorded")
+	}
+	if e.Stable.Status != http.StatusCreated {
+		t.Errorf("published stable status = %d, want 201", e.Stable.Status)
 	}
 }

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchComparisons, fetchStats } from "./api";
-import type { Comparison, Deployment, GatewayStats, Outcome, SamplingStats, Stats } from "./types";
+import { fetchComparisons, fetchSampling, fetchStats } from "./api";
+import type {
+  Comparison,
+  Deployment,
+  EndpointRate,
+  GatewayStats,
+  Outcome,
+  SamplingStats,
+  Stats,
+} from "./types";
 import SummaryCards from "./components/SummaryCards";
 import SamplingPanel from "./components/SamplingPanel";
 import ComparisonTable from "./components/ComparisonTable";
@@ -20,6 +28,7 @@ export default function App() {
   const [sampling, setSampling] = useState<SamplingStats | null>(null);
   const [gateway, setGateway] = useState<GatewayStats | null>(null);
   const [deployment, setDeployment] = useState<Deployment | null>(null);
+  const [endpointRates, setEndpointRates] = useState<EndpointRate[]>([]);
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
   const [filter, setFilter] = useState<Outcome | "all">("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -28,12 +37,17 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [statsRes, list] = await Promise.all([fetchStats(), fetchComparisons(filter)]);
+      const [statsRes, list, samplingRes] = await Promise.all([
+        fetchStats(),
+        fetchComparisons(filter),
+        fetchSampling(),
+      ]);
       setStats(statsRes.stats);
       setSampling(statsRes.sampling);
       setGateway(statsRes.gateway);
       setDeployment(statsRes.deployment);
       setComparisons(list);
+      setEndpointRates(samplingRes.endpoints);
       setUpdatedAt(new Date());
       setError(null);
     } catch (err) {
@@ -72,7 +86,9 @@ export default function App() {
       </header>
 
       {stats && <SummaryCards stats={stats} />}
-      {sampling && gateway && <SamplingPanel sampling={sampling} gateway={gateway} />}
+      {sampling && gateway && (
+        <SamplingPanel sampling={sampling} gateway={gateway} endpoints={endpointRates} />
+      )}
 
       <section className="panel">
         <div className="panel-header">

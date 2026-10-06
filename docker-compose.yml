@@ -9,7 +9,9 @@ services:
       # 5433 on the host so it doesn't clash with a local Postgres install
       - "5433:5432"
     volumes:
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Whole directory: the entrypoint runs the files in name order, so
+      # init-app-databases.sql creates the two app databases first.
+      - ./db:/docker-entrypoint-initdb.d:ro
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mirrorgate -d mirrorgate"]
@@ -50,18 +52,47 @@ services:
       - "16686:16686"
       - "4318:4318"
 
+  # Stand-in for the payment provider and email sender. Live endpoints for
+  # stable, sandbox endpoints for the candidate, and it records every call so
+  # a test can prove shadow writes never reached the live ones.
+  mock-external:
+    build:
+      context: services/mock-external
+    environment:
+      PORT: "9003"
+    ports:
+      - "9003:9003"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9003/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
   stable-service:
     build:
       context: .
       dockerfile: services/stable/Dockerfile
     environment:
       PORT: "9001"
+      ORDERS_DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/stable_app?sslmode=disable
+      PAYMENTS_URL: http://mock-external:9003/payments/charge
+      EMAIL_URL: http://mock-external:9003/notifications/email
       OTEL_SERVICE_NAME: stable-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
     ports:
       - "9001:9001"
     depends_on:
-      - jaeger
+      jaeger:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      mock-external:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9001/health"]
       interval: 5s
@@ -74,12 +105,29 @@ services:
       dockerfile: services/candidate/Dockerfile
     environment:
       PORT: "9002"
+      # Sandbox wiring: its own database, the sandbox endpoints of the mock
+      # external services, and writes are refused unless they are shadow
+      # traffic from the gateway.
+      ORDERS_DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/candidate_sandbox?sslmode=disable
+      PAYMENTS_URL: http://mock-external:9003/sandbox/payments/charge
+      EMAIL_URL: http://mock-external:9003/sandbox/notifications/email
+      REQUIRE_SHADOW_HEADER: "true"
       OTEL_SERVICE_NAME: candidate-service
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
     ports:
       - "9002:9002"
     depends_on:
-      - jaeger
+      jaeger:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      mock-external:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9002/health"]
       interval: 5s
@@ -100,15 +148,27 @@ services:
       DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
       KAFKA_BROKERS: redpanda:9092
       SHADOW_TIMEOUT: 2s
-      MIRROR_METHODS: GET
+      MIRROR_METHODS: ${MIRROR_METHODS:-GET,POST}
       MAX_SHADOW_IN_FLIGHT: ${MAX_SHADOW_IN_FLIGHT:-100}
       # Overridable so one experiment run can change strategy without editing
       # this file: SAMPLING_MODE=random SAMPLING_RATE=0.25 docker compose up -d gateway
       SAMPLING_MODE: ${SAMPLING_MODE:-full}
       SAMPLING_RATE: ${SAMPLING_RATE:-}
       SAMPLING_RULES: ${SAMPLING_RULES:-}
+      # Risk mode only: how far back the risk signals look and how often the
+      # gateway re-reads them from Postgres.
+      RISK_WINDOW: ${RISK_WINDOW:-10m}
+      RISK_REFRESH: ${RISK_REFRESH:-5s}
       OTEL_SERVICE_NAME: gateway
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    # Fixed budget so every experiment run gets the same resources. The
+    # machine has 16 CPUs, so these limits are what the experiment compares
+    # strategies under, not a limit the laptop imposes.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
     ports:
       - "8080:8080"
       - "8081:8081"
@@ -135,6 +195,12 @@ services:
       DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
       KAFKA_BROKERS: redpanda:9092
       KAFKA_GROUP: mirrorgate-comparison-worker
+      # Fields that differ by design rather than because something broke:
+      # the three generated ones on every order, and the version string the
+      # two services report on /health. Without these, every order and every
+      # health check would be reported as a difference.
+      COMPARE_IGNORE_FIELDS: order_id,created_at,payment_reference,version
+      COMPARE_SLOW_THRESHOLD_MS: "200"
       OTEL_SERVICE_NAME: comparison-worker
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
@@ -165,12 +231,21 @@ services:
     environment:
       TEST_GATEWAY_URL: http://gateway:8080
       TEST_ADMIN_URL: http://gateway:8081
+      TEST_STABLE_URL: http://stable-service:9001
+      TEST_CANDIDATE_URL: http://candidate-service:9002
+      TEST_MOCK_URL: http://mock-external:9003
     command: sh /src/scripts/run-tests.sh
     depends_on:
       gateway:
         condition: service_healthy
       comparison-worker:
         condition: service_started
+      stable-service:
+        condition: service_healthy
+      candidate-service:
+        condition: service_healthy
+      mock-external:
+        condition: service_healthy
 
   # k6 load generator for the sampling experiment. The script path lives here
   # rather than on the command line because Git Bash on Windows rewrites a
@@ -180,6 +255,18 @@ services:
     image: grafana/k6:0.55.0
     profiles: ["test"]
     command: ["run", "/scripts/sampling.js"]
+    volumes:
+      - ./experiments:/scripts
+      - ./results:/results
+    environment:
+      GATEWAY_URL: http://gateway:8080
+
+  # The midterm workload, which adds the order POST to the week 5 mix.
+  #   ./experiments/run-midterm.sh
+  k6-midterm:
+    image: grafana/k6:0.55.0
+    profiles: ["test"]
+    command: ["run", "/scripts/midterm.js"]
     volumes:
       - ./experiments:/scripts
       - ./results:/results

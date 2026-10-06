@@ -53,9 +53,19 @@ export interface SamplingRule {
 }
 
 export interface SamplingStats {
-  mode: "full" | "random" | "endpoint";
+  mode: "full" | "random" | "endpoint" | "risk";
   rate: number;
   rules?: SamplingRule[];
   mirrored: number;
   skipped: number;
+}
+
+export interface EndpointRate {
+  endpoint: string;
+  requests: number;
+  share: number;
+  score: number;
+  rate: number;
+  reasons: string[];
+  signal: { mismatches: number; errors: number; slow: number };
 }

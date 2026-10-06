@@ -1,0 +1,7 @@
+strategy,trials,mean_requests,mean_mirrored,mean_actual_rate_pct,sd_actual_rate_pct,mean_stored,mean_regressions_detected,detection_rate_pct,mean_p50_ms,sd_p50_ms,mean_p95_ms,sd_p95_ms,mean_p99_ms,R1_found_in_trials,R2_found_in_trials,R3_found_in_trials,R4_found_in_trials,R5_found_in_trials,R1_mean_detection_s,R2_mean_detection_s,R3_mean_detection_s,R4_mean_detection_s,R5_mean_detection_s,R1_mean_requests_until_detection,R2_mean_requests_until_detection,R3_mean_requests_until_detection,R4_mean_requests_until_detection,R5_mean_requests_until_detection
+full,5,3000,3000,100.00,0.00,3000,5.00,100.0,0.613,0.012,1.029,0.025,2.992,5,5,5,5,5,0.11,0.13,0.14,0.15,0.00,11,13,14,15,0
+random-50,5,3000,1510,50.33,0.86,1510,5.00,100.0,0.598,0.065,0.997,0.050,2.734,5,5,5,5,5,0.18,0.20,0.33,0.22,1.39,18,20,33,22,139
+random-25,5,3001,745,24.84,0.37,745,5.00,100.0,0.575,0.081,0.993,0.020,2.626,5,5,5,5,5,0.20,0.34,0.35,0.72,3.57,20,34,35,72,357
+random-10,5,3001,313,10.44,0.25,313,5.00,100.0,0.529,0.022,0.964,0.024,2.669,5,5,5,5,5,1.81,1.71,0.95,3.05,11.90,181,171,95,305,1190
+endpoint,5,3000,1268,42.27,0.97,1268,5.00,100.0,0.591,0.023,1.025,0.016,2.766,5,5,5,5,5,0.11,0.24,0.33,0.86,1.59,11,24,33,86,159
+risk,5,3000,406,13.53,0.59,406,5.00,100.0,0.581,0.089,0.995,0.054,2.992,5,5,5,5,5,0.83,0.88,2.18,0.94,3.55,83,88,218,94,355
