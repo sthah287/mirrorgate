@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"mirrorgate/gateway/internal/proxy"
 	"mirrorgate/gateway/internal/sampling"
 	"mirrorgate/shared/compare"
+	"mirrorgate/shared/outbox"
 	"mirrorgate/shared/storage"
 )
 
@@ -33,15 +35,22 @@ type sampler interface {
 	Explain() []sampling.EndpointRate
 }
 
+// outboxStats is how far behind the relay is. Pending depth and the age of
+// the oldest unpublished row are what show a broker outage as a delay.
+type outboxStats interface {
+	Stats(ctx context.Context) (outbox.Stats, error)
+}
+
 type API struct {
 	store      *storage.Store
 	gateway    gateway
 	sampler    sampler
+	outbox     outboxStats
 	deployment Deployment
 }
 
-func New(store *storage.Store, gw gateway, sm sampler, deployment Deployment) *API {
-	return &API{store: store, gateway: gw, sampler: sm, deployment: deployment}
+func New(store *storage.Store, gw gateway, sm sampler, ob outboxStats, deployment Deployment) *API {
+	return &API{store: store, gateway: gw, sampler: sm, outbox: ob, deployment: deployment}
 }
 
 func (a *API) Routes() http.Handler {
@@ -68,11 +77,17 @@ func (a *API) stats(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	ob, err := a.outbox.Stats(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"deployment": a.deployment,
 		"stats":      st,
 		"gateway":    a.gateway.Stats(),
 		"sampling":   a.sampler.Stats(),
+		"outbox":     ob,
 	})
 }
 

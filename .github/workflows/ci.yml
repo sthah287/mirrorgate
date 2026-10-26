@@ -1,0 +1,79 @@
+name: CI
+
+# The tests need Go, Node, and in places a Postgres. Running them here means
+# anyone can see them pass without installing any of that.
+on:
+  push:
+  pull_request:
+
+jobs:
+  go:
+    name: Go tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mirrorgate
+          POSTGRES_PASSWORD: mirrorgate
+          POSTGRES_DB: mirrorgate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mirrorgate -d mirrorgate"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Create the application databases
+        run: |
+          PGPASSWORD=mirrorgate psql -h localhost -U mirrorgate -d mirrorgate -f db/init-app-databases.sql
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l shared gateway comparison-worker outbox-relay services tests)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: |
+          for module in shared gateway comparison-worker outbox-relay services/stable services/candidate services/mock-external tests; do
+            (cd "$module" && go vet ./...)
+          done
+
+      - name: go test
+        # The end-to-end tests in tests/ need the running stack and skip
+        # themselves without it. Everything else runs, including the outbox
+        # and storage tests, which use the Postgres service above.
+        env:
+          TEST_DATABASE_URL: postgres://mirrorgate:mirrorgate@localhost:5432/mirrorgate?sslmode=disable
+        run: |
+          for module in shared gateway comparison-worker outbox-relay tests; do
+            echo "===== $module ====="
+            (cd "$module" && go test -count=1 ./...)
+          done
+
+  dashboard:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm ci
+        working-directory: dashboard
+      - run: npm run build
+        working-directory: dashboard

@@ -25,8 +25,12 @@ func NewProducer(brokers string, topic string) *Producer {
 		Topic: topic,
 		// Keying by request id spreads events over partitions while keeping
 		// retries of the same request on one partition.
-		Balancer:               &kafka.Hash{},
-		RequiredAcks:           kafka.RequireOne,
+		Balancer: &kafka.Hash{},
+		// Wait for all in-sync replicas. With the single-broker dev cluster
+		// this is the same as RequireOne, but the outbox only promises
+		// delivery once the broker has acknowledged, so ask for the strongest
+		// ack this setup can give.
+		RequiredAcks:           kafka.RequireAll,
 		AllowAutoTopicCreation: true,
 		BatchTimeout:           50 * time.Millisecond,
 	}}
@@ -44,6 +48,19 @@ func (p *Producer) Publish(ctx context.Context, e event.Comparison) error {
 	injectTrace(ctx, &msg)
 	if err := p.writer.WriteMessages(ctx, msg); err != nil {
 		return fmt.Errorf("publish %s: %w", e.RequestID, err)
+	}
+	return nil
+}
+
+// PublishStored sends a payload that was serialized earlier. The trace
+// context comes from ctx, which the relay rebuilds from the traceparent it
+// saved with the row, so the message still belongs to the original request's
+// trace even though the publish happens much later.
+func (p *Producer) PublishStored(ctx context.Context, requestID string, payload []byte) error {
+	msg := kafka.Message{Key: []byte(requestID), Value: payload}
+	injectTrace(ctx, &msg)
+	if err := p.writer.WriteMessages(ctx, msg); err != nil {
+		return fmt.Errorf("publish %s: %w", requestID, err)
 	}
 	return nil
 }

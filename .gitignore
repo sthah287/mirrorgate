@@ -9,3 +9,14 @@ services/stable/stable
 services/candidate/candidate
 services/mock-external/mock-external
 .ipynb_checkpoints/
+__pycache__/
+
+# Per-run intermediates from the experiment harness. The runners delete these
+# on a clean run; a crashed one leaves them behind.
+results/**/*.k6.json
+results/**/*.stats.json
+results/**/*.db.json
+results/**/*.sampling.json
+results/**/*.external.json
+results/**/*.resources.json
+results/**/.*.stop

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"mirrorgate/gateway/internal/sampling"
 	"mirrorgate/shared/broker"
 	"mirrorgate/shared/event"
+	"mirrorgate/shared/outbox"
 	"mirrorgate/shared/storage"
 	"mirrorgate/shared/tracing"
 )
@@ -83,15 +85,31 @@ func run() error {
 	if err := broker.EnsureTopic(ctx, brokers, topic, 1); err != nil {
 		return err
 	}
-	producer := broker.NewProducer(brokers, topic)
-	defer producer.Close()
 
-	mirror, err := proxy.New(cfg, producer, sampler)
+	// outbox is the real path: the event is written to Postgres and the relay
+	// moves it to the topic, so a broker outage delays comparisons instead of
+	// losing them. direct is the old behaviour, kept only so the experiment
+	// can measure the difference between the two.
+	publishMode := env("PUBLISH_MODE", "outbox")
+	outboxStore := outbox.New(store.Pool())
+	var publisher proxy.Publisher
+	switch publishMode {
+	case "outbox":
+		publisher = outboxStore
+	case "direct":
+		producer := broker.NewProducer(brokers, topic)
+		defer producer.Close()
+		publisher = producer
+	default:
+		return fmt.Errorf("PUBLISH_MODE must be outbox or direct, got %q", publishMode)
+	}
+
+	mirror, err := proxy.New(cfg, publisher, sampler)
 	if err != nil {
 		return err
 	}
 
-	internalAPI := api.New(store, mirror, sampler, api.Deployment{
+	internalAPI := api.New(store, mirror, sampler, outboxStore, api.Deployment{
 		StableVersion:    env("STABLE_VERSION", "v1"),
 		CandidateVersion: env("CANDIDATE_VERSION", "v2"),
 		StableURL:        cfg.StableURL,
@@ -124,7 +142,8 @@ func run() error {
 	}
 	slog.Info("mirroring traffic", "stable", cfg.StableURL, "candidate", cfg.CandidateURL,
 		"shadow_timeout", cfg.ShadowTimeout, "methods", cfg.MirrorMethods,
-		"sampling_mode", sampleStats.Mode, "sampling_rate", sampleStats.Rate)
+		"sampling_mode", sampleStats.Mode, "sampling_rate", sampleStats.Rate,
+		"publish_mode", publishMode)
 
 	select {
 	case err := <-errs:

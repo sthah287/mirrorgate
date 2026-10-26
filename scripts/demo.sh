@@ -19,6 +19,7 @@ psql_query() {
 
 if [[ "${1:-}" == "--reset" ]]; then
   psql_query -qc "TRUNCATE request_comparisons RESTART IDENTITY"
+  psql_query -qc "TRUNCATE comparison_outbox"
   docker compose exec -T postgres psql -U mirrorgate -d stable_app -qc "TRUNCATE orders" >/dev/null
   docker compose exec -T postgres psql -U mirrorgate -d candidate_sandbox -qc "TRUNCATE orders" >/dev/null
   curl -sf -X POST http://localhost:9003/reset >/dev/null

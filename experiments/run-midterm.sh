@@ -73,6 +73,7 @@ wait_for_worker() {
 # just started so its counters and its risk state are empty.
 reset_state() {
   psql_query -qc "TRUNCATE request_comparisons RESTART IDENTITY" >/dev/null
+  psql_query -qc "TRUNCATE comparison_outbox" >/dev/null
   docker compose exec -T postgres psql -U mirrorgate -d stable_app -qc "TRUNCATE orders" >/dev/null
   docker compose exec -T postgres psql -U mirrorgate -d candidate_sandbox -qc "TRUNCATE orders" >/dev/null
   curl -sf -X POST http://localhost:9003/reset >/dev/null

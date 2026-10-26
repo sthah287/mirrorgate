@@ -1,5 +1,7 @@
 # MirrorGate
 
+[![CI](https://github.com/sthah287/mirrorgate/actions/workflows/ci.yml/badge.svg)](https://github.com/sthah287/mirrorgate/actions/workflows/ci.yml)
+
 A shadow traffic system for testing a new version of a backend service with real requests before it gets released.
 
 MirrorGate sits in front of a service. Every request goes to the current **stable** version and the client gets that response like normal. At the same time, MirrorGate sends a copy of the request to the **candidate** version, the two responses get compared, and the result is saved. The candidate's response is never returned to the client.
@@ -14,6 +16,24 @@ The documents that define the experiment are in `docs/`:
 | [docs/comparison-rules.md](docs/comparison-rules.md) | what counts as a difference |
 | [docs/sampling-strategies.md](docs/sampling-strategies.md) | the four strategies, including how the risk score is calculated |
 | [docs/shadow-writes.md](docs/shadow-writes.md) | how a mirrored `POST` is kept from causing real side effects |
+
+## Verifying this without Go, Node or k6 installed
+
+Everything runs in containers, so Docker Desktop is the only requirement.
+
+```bash
+docker compose up --build -d     # the whole stack
+docker compose run --rm tests    # every module's tests
+./scripts/demo.sh --reset        # one request per fault, with the results
+```
+
+`docker compose run --rm tests` builds the Go toolchain in a container and
+runs the suite for all five modules, including the tests that need Postgres.
+Nothing has to be installed locally.
+
+The same tests also run on every push in GitHub Actions
+(`.github/workflows/ci.yml`), so the badge above is the quick answer to
+whether they pass.
 
 ## Architecture
 
@@ -38,6 +58,12 @@ The documents that define the experiment are in `docs/`:
                           comparison event
                                   |
                                   v
+                    comparison_outbox (PostgreSQL)
+                                  |
+                                  v
+                          Outbox relay
+                                  |
+                                  v
                     Redpanda topic mirrorgate.comparisons
                                   |
                                   v
@@ -52,7 +78,9 @@ The documents that define the experiment are in `docs/`:
   every service also sends spans to Jaeger (:16686)
 ```
 
-The gateway still owns the request path: it forwards to stable, returns that response, and fires the shadow request. What it no longer does is compare the two responses or write to the database. It publishes one event with both responses in it and moves on. The comparison worker consumes that topic, classifies the result, and stores it.
+The gateway still owns the request path: it forwards to stable, returns that response, and fires the shadow request. What it no longer does is compare the two responses or write to the database.
+
+Since week 8 it does not talk to the broker either. It writes the event to an outbox table in Postgres, and a separate relay moves rows to the topic. A broker outage then delays comparisons instead of losing them, which is what [docs/outbox.md](docs/outbox.md) is about. The comparison worker consumes the topic, classifies the result, and stores it.
 
 ## What works right now
 
@@ -76,6 +104,15 @@ Added in Progress Report 2:
 - A k6 experiment that runs the same workload against each sampling strategy and writes real results to `results/`
 - A failure test script for the two new failure modes (worker down, broker down)
 
+Added in weeks 8 and 9:
+
+- **A durable outbox.** The gateway writes comparison events to Postgres and the `outbox-relay` service publishes them. A broker outage became a delay: in the failure test, 10 of 10 comparisons survive a Redpanda restart, against losing them in the old direct path
+- **Exact detection measurements.** Every comparison carries the request's position in the gateway's eligible stream, so "requests until detection" is a counted integer rather than elapsed time times the request rate
+- **CPU and memory measurement** per container, with exact cgroup CPU counters and sampled memory
+- **A rare-fault experiment** where each fault appears once in 1000 requests, so strategies actually miss things and detection rate means something again
+- **An overhead experiment**, mirroring off against mirroring everything at a higher rate, reported as a difference with a confidence interval
+- **CI** that runs every module's tests and the dashboard build on GitHub
+
 Added in week 7, for the midterm:
 
 - **A fixed regression catalog**, R1 to R5, with stable IDs and a written rule for what counts as detecting each one. The faults are marked `REGRESSION (Rn)` in the candidate source
@@ -96,10 +133,14 @@ mirrorgate/
 ├── comparison-worker/        Go consumer
 │   ├── cmd/worker/           main: Kafka + Postgres wiring
 │   └── internal/consume/     event -> comparison -> stored row
+├── outbox-relay/             Go relay: Postgres outbox -> Redpanda
+│   ├── cmd/relay/
+│   └── internal/relay/
 ├── shared/                   used by both services
 │   ├── event/                the comparison event
 │   ├── broker/               Kafka producer, consumer, trace headers
 │   ├── compare/              response comparison
+│   ├── outbox/               the outbox table, written and drained
 │   ├── storage/              Postgres queries
 │   └── tracing/              OTLP setup
 ├── services/
@@ -116,10 +157,17 @@ mirrorgate/
 │   ├── run.sh                week 5 experiment, one run per strategy
 │   ├── midterm.js            week 7 workload, adds the order POST
 │   ├── run-midterm.sh        week 7 experiment, 5 trials per strategy
+│   ├── rare.js               week 9 workload, faults once in 1000 requests
+│   ├── run-rare.sh           week 9 experiment, 10 trials per arm
+│   ├── run-overhead.sh       mirroring off vs full, for the overhead numbers
+│   ├── resource_monitor.py   per-container CPU and memory for a run
+│   └── slow_threshold.py     measures what "significantly slower" should mean
 │   ├── collect*.py           merge k6 + gateway + database results
 │   └── summarize*.py         build summary.csv and summary.md
 ├── results/progress-report-2/  week 5 experiment output
 ├── results/midterm/            week 7 experiment output
+├── results/rare-faults/        week 9 rare-fault experiment output
+├── results/overhead/           week 9 overhead measurement
 ├── tests/                    end-to-end tests against the running stack
 ├── scripts/
 │   ├── demo.sh               one request per scenario + results table
@@ -173,6 +221,7 @@ docker compose up --build
 | `SHADOW_TIMEOUT` | `2s` | max time for a candidate request |
 | `MAX_SHADOW_IN_FLIGHT` | `100` | extra requests aren't mirrored |
 | `MIRROR_METHODS` | `GET,POST` | comma separated |
+| `PUBLISH_MODE` | `outbox` | `outbox` writes to Postgres for the relay; `direct` publishes to Kafka and can lose events |
 | `SAMPLING_MODE` | `full` | `full`, `random`, `endpoint`, or `risk` |
 | `SAMPLING_RATE` | `1` | 0 to 1, used by `random` and as the `endpoint` fallback. Ignored in `risk` mode |
 | `SAMPLING_RULES` | | per-path rates for `endpoint` mode |
@@ -182,6 +231,8 @@ docker compose up --build
 | `STABLE_VERSION` / `CANDIDATE_VERSION` | `v1` / `v2` | labels shown on the dashboard |
 
 Worker configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `KAFKA_GROUP`, `OTEL_EXPORTER_OTLP_ENDPOINT`, plus the comparison rules `COMPARE_IGNORE_FIELDS` and `COMPARE_SLOW_THRESHOLD_MS`.
+
+Relay configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `OUTBOX_BATCH_SIZE`, `OUTBOX_POLL_INTERVAL`, `OUTBOX_MAX_BACKOFF`, `OUTBOX_PUBLISH_TIMEOUT`, `OUTBOX_RETENTION`. See [docs/outbox.md](docs/outbox.md).
 
 The gateway, stable, and candidate containers have fixed CPU and memory limits in `docker-compose.yml` (2 CPUs and 1 GB for the gateway, 1 CPU and 512 MB each for the services). They are there so every experiment run gets the same budget.
 
@@ -441,7 +492,13 @@ it is what the earlier table below describes.
 
 **The comparison worker stops.** Clients keep getting stable responses, the gateway keeps publishing, and the events sit in the topic. When the worker comes back it reads from its last committed offset and catches up. This is the main reason the broker is in the design, and it is the one scenario that behaves cleanly.
 
-**The broker stops.** Clients still get stable responses, which is the property that matters, and the gateway counts the publish failures instead of failing the request. What happens to those events is not reliable. MirrorGate has no outbox and does not retry, so anything the Kafka client can't deliver is the client's business: in one run 9 of 10 events sat in its internal batch and were flushed once traffic resumed, and in another run with no traffic after recovery all of them were dropped. The `publish_failed` counter is therefore an upper bound on losses, not a count of them. Fixing this properly needs an outbox, and it is on the list below.
+**The broker stops.** Clients still get stable responses, and the events wait in the outbox instead of disappearing. When Redpanda comes back the relay drains them: 10 of 10 in the failure test, with nothing lost.
+
+**The relay is killed mid-run.** The rows it had not published yet are still in the table, so restarting it finishes the job. Also 10 of 10.
+
+**The broker stops, with `PUBLISH_MODE=direct`.** This is the old behaviour, kept so the difference can be measured rather than asserted. How much is lost is unpredictable: four runs of the same scenario lost 10, 1, 0 and 10 of 10. `publish_failed` counted 10 every time, so it is an upper bound on losses rather than a count of them.
+
+The reason is not what it looks like. `scripts/direct-mode-probe.sh` brings the broker back and sends no further traffic at all, and all ten events still arrive within thirty seconds: the Kafka client keeps retrying in the background long after the gateway's publish call has timed out and counted a failure. Whether an event survives comes down to whether the broker returns inside that retry budget, which is not something the gateway knows or controls. The outbox recovered 10 of 10 in every run.
 
 ## Tests
 
@@ -451,6 +508,9 @@ Without Go installed, against the running stack:
 docker compose up -d
 docker compose run --rm tests
 ```
+
+The suite covers five modules. Some tests need Postgres and create their own
+schema inside the running database, so they never touch the demo data.
 
 With Go installed:
 
@@ -475,13 +535,15 @@ What's covered:
 - comparison rules: ignored fields are skipped by name and by path, a real change in the same body is still caught, the latency threshold is configurable, and bad settings are rejected
 - risk-priority scoring: a quiet endpoint stays at the floor, a recent mismatch or candidate error raises the rate, writes and rare endpoints are prioritised, the worst case reaches 100%, traffic counts age out, and the reasons shown on the dashboard match the score
 - shadow writes: the client gets the stable order, the candidate's write lands only in the sandbox database, the mock records exactly one live charge and one sandbox charge, the candidate refuses a write without the shadow header, and a failed order doesn't affect the client
+- the outbox: the relay publishes and marks rows, a broker failure leaves them untouched for a retry with the attempt recorded, batch size is respected, the stored traceparent is the one used at publish time, and writing the same request id twice queues it once
+- the worker stays idempotent when the same event arrives twice, which is what makes at-least-once delivery safe
 - end to end against the real containers: all demo scenarios come out with the right outcome, fields that differ by design aren't reported, the client always gets the stable body while the stored candidate body differs, and the gateway counters agree with what's in Postgres
 
 ## Current limitations
 
 - `POST /api/orders` is the only write that exists. `PUT`, `PATCH`, and `DELETE` are allowed by `MIRROR_METHODS` and scored as writes, but no endpoint uses them, so that path is untested
 - The sandbox is two databases in one Postgres container and a mock payment service. It proves the candidate writes nowhere the users can see, but pointing a candidate at a real provider's sandbox is a configuration promise, and a wrong environment variable would still be a real charge
-- **Publishing is at-most-once.** There is no outbox or retry, so a broker outage can lose comparisons. The client is never affected, and the failures are counted, but the count is an upper bound rather than an exact loss number
+- **Publishing is at-least-once, through the outbox.** A broker outage no longer loses comparisons, but a gateway crash between the shadow request finishing and the outbox row committing still does: that window is one insert wide and there is no journal in front of it. Duplicate delivery is handled by the worker rather than prevented
 - **Consuming is at-least-once.** Offsets are committed after the save, so an event can be processed twice. `SaveComparison` is idempotent on `request_id` to absorb that
 - Responses are fully buffered in memory, so very large or streaming responses aren't a good fit yet
 - Ignored fields are matched by exact name or exact path. No wildcards, no regular expressions

@@ -12,8 +12,12 @@ const Topic = "mirrorgate.comparisons"
 // Comparison carries both responses as they came off the wire. The worker
 // decides whether they match, not the gateway.
 type Comparison struct {
-	RequestID  string    `json:"request_id"`
-	TraceID    string    `json:"trace_id,omitempty"`
+	RequestID string `json:"request_id"`
+	TraceID   string `json:"trace_id,omitempty"`
+	// RequestSeq is this request's position in the gateway's stream of
+	// eligible requests, counted from 1 when the gateway started. It makes
+	// "requests until detection" an exact count rather than a rate estimate.
+	RequestSeq int64     `json:"request_seq"`
 	ReceivedAt time.Time `json:"received_at"`
 	Method     string    `json:"method"`
 	Path       string    `json:"path"`

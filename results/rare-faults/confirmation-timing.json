@@ -1,0 +1,121 @@
+{
+  "stored": 3001,
+  "run_started_at": "2026-10-26T05:55:25.451274+00:00",
+  "faults": {
+    "R1": {
+      "request_seq": 101,
+      "arrival_ms": 998.0,
+      "confirmation_ms": 5180.5,
+      "pipeline_ms": 4182.5,
+      "candidate_latency_ms": 0.3
+    },
+    "R2": {
+      "request_seq": 301,
+      "arrival_ms": 2998.0,
+      "confirmation_ms": 15280.7,
+      "pipeline_ms": 12282.7,
+      "candidate_latency_ms": 0.3
+    },
+    "R3": {
+      "request_seq": 501,
+      "arrival_ms": 4997.4,
+      "confirmation_ms": 27473.1,
+      "pipeline_ms": 22475.7,
+      "candidate_latency_ms": 401.4
+    },
+    "R4": {
+      "request_seq": 701,
+      "arrival_ms": 6997.6,
+      "confirmation_ms": 45694.2,
+      "pipeline_ms": 38696.5,
+      "candidate_latency_ms": 2000.7
+    },
+    "R5": {
+      "request_seq": 901,
+      "arrival_ms": 8998.3,
+      "confirmation_ms": 45795.7,
+      "pipeline_ms": 36797.4,
+      "candidate_latency_ms": 14.4
+    }
+  },
+  "pipeline_lag_by_decile": [
+    {
+      "decile": 1,
+      "from_seq": 1,
+      "to_seq": 300,
+      "avg_lag_s": 6.2,
+      "max_lag_s": 12.2
+    },
+    {
+      "decile": 2,
+      "from_seq": 301,
+      "to_seq": 600,
+      "avg_lag_s": 18.4,
+      "max_lag_s": 24.5
+    },
+    {
+      "decile": 3,
+      "from_seq": 601,
+      "to_seq": 900,
+      "avg_lag_s": 30.6,
+      "max_lag_s": 38.7
+    },
+    {
+      "decile": 4,
+      "from_seq": 901,
+      "to_seq": 1200,
+      "avg_lag_s": 42.9,
+      "max_lag_s": 49.0
+    },
+    {
+      "decile": 5,
+      "from_seq": 1201,
+      "to_seq": 1500,
+      "avg_lag_s": 55.2,
+      "max_lag_s": 61.3
+    },
+    {
+      "decile": 6,
+      "from_seq": 1501,
+      "to_seq": 1800,
+      "avg_lag_s": 67.5,
+      "max_lag_s": 79.7
+    },
+    {
+      "decile": 7,
+      "from_seq": 1801,
+      "to_seq": 2100,
+      "avg_lag_s": 79.7,
+      "max_lag_s": 85.8
+    },
+    {
+      "decile": 8,
+      "from_seq": 2101,
+      "to_seq": 2400,
+      "avg_lag_s": 92.0,
+      "max_lag_s": 98.1
+    },
+    {
+      "decile": 9,
+      "from_seq": 2401,
+      "to_seq": 2700,
+      "avg_lag_s": 104.2,
+      "max_lag_s": 110.3
+    },
+    {
+      "decile": 10,
+      "from_seq": 2701,
+      "to_seq": 3000,
+      "avg_lag_s": 116.5,
+      "max_lag_s": 122.6
+    },
+    {
+      "decile": 11,
+      "from_seq": 3001,
+      "to_seq": 3001,
+      "avg_lag_s": 122.7,
+      "max_lag_s": 122.7
+    }
+  ],
+  "note": "One full-sampling run of experiments/rare.js at 100 requests/second. request_seq and arrival_ms come from the gateway clock; confirmation_ms is the worker clock when the comparison row was written. Both containers read the same VM kernel clock. arrival_ms is when the fault-bearing request showed up, which is what the 70 rare-fault runs recorded; confirmation_ms is when the regression was actually known."
+}

@@ -1,0 +1,56 @@
+{
+  "run": "off-t2",
+  "arm": "off",
+  "trial": 2,
+  "rate_per_s": 500.0,
+  "duration": "20s",
+  "total_requests": 10001,
+  "mirrored": 0,
+  "skipped_in_flight": 0,
+  "publish_failed": 0,
+  "latency_ms": {
+    "p50": 0.424,
+    "p95": 0.654,
+    "p99": 1.157,
+    "avg": 0.468,
+    "max": 12.043
+  },
+  "resources": {
+    "gateway": {
+      "cpu_seconds": 3.7377,
+      "mem_mean_mb": 15.72,
+      "mem_peak_mb": 18.8,
+      "memory_samples": 11
+    },
+    "candidate-service": {
+      "cpu_seconds": 0.1245,
+      "mem_mean_mb": 19.38,
+      "mem_peak_mb": 19.93,
+      "memory_samples": 11
+    },
+    "stable-service": {
+      "cpu_seconds": 1.7081,
+      "mem_mean_mb": 20.38,
+      "mem_peak_mb": 21.66,
+      "memory_samples": 11
+    },
+    "comparison-worker": {
+      "cpu_seconds": 0.0314,
+      "mem_mean_mb": 10.96,
+      "mem_peak_mb": 10.98,
+      "memory_samples": 11
+    },
+    "outbox-relay": {
+      "cpu_seconds": 0.0695,
+      "mem_mean_mb": 12.18,
+      "mem_peak_mb": 12.29,
+      "memory_samples": 11
+    },
+    "postgres": {
+      "cpu_seconds": 0.1824,
+      "mem_mean_mb": 57.92,
+      "mem_peak_mb": 58.04,
+      "memory_samples": 11
+    }
+  }
+}

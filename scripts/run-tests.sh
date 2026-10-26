@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 
-for module in shared gateway comparison-worker tests; do
+for module in shared gateway comparison-worker outbox-relay tests; do
   echo
   echo "===== $module ====="
   (cd "$module" && go test -count=1 "$@" ./...)

@@ -1,0 +1,19 @@
+{
+  "threshold_ms": 200.0,
+  "clean_endpoints": {
+    "samples": 5842,
+    "p50": 0.006,
+    "p95": 0.1,
+    "p99": 0.378,
+    "p999": 0.979,
+    "max": 2.348
+  },
+  "slow_endpoint_r3": {
+    "samples": 6,
+    "p50": 400.467,
+    "min": 400.094,
+    "max": 401.058
+  },
+  "headroom_over_clean_max": 85.2,
+  "note": "clean endpoints are every mirrored comparison except the four faulty paths; the difference is candidate_latency_ms - stable_latency_ms on the same request"
+}

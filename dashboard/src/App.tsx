@@ -6,11 +6,13 @@ import type {
   EndpointRate,
   GatewayStats,
   Outcome,
+  OutboxStats,
   SamplingStats,
   Stats,
 } from "./types";
 import SummaryCards from "./components/SummaryCards";
 import SamplingPanel from "./components/SamplingPanel";
+import OutboxPanel from "./components/OutboxPanel";
 import ComparisonTable from "./components/ComparisonTable";
 import ComparisonDetail from "./components/ComparisonDetail";
 
@@ -27,6 +29,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [sampling, setSampling] = useState<SamplingStats | null>(null);
   const [gateway, setGateway] = useState<GatewayStats | null>(null);
+  const [outbox, setOutbox] = useState<OutboxStats | null>(null);
   const [deployment, setDeployment] = useState<Deployment | null>(null);
   const [endpointRates, setEndpointRates] = useState<EndpointRate[]>([]);
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
@@ -45,6 +48,7 @@ export default function App() {
       setStats(statsRes.stats);
       setSampling(statsRes.sampling);
       setGateway(statsRes.gateway);
+      setOutbox(statsRes.outbox);
       setDeployment(statsRes.deployment);
       setComparisons(list);
       setEndpointRates(samplingRes.endpoints);
@@ -86,6 +90,7 @@ export default function App() {
       </header>
 
       {stats && <SummaryCards stats={stats} />}
+      {outbox && <OutboxPanel outbox={outbox} />}
       {sampling && gateway && (
         <SamplingPanel sampling={sampling} gateway={gateway} endpoints={endpointRates} />
       )}

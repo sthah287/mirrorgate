@@ -88,8 +88,11 @@ func Result(e event.Comparison, rules compare.Rules) storage.Comparison {
 
 	result := rules.Compare(stable, candidate)
 	c := storage.Comparison{
-		RequestID:          e.RequestID,
-		TraceID:            e.TraceID,
+		RequestID:  e.RequestID,
+		TraceID:    e.TraceID,
+		RequestSeq: e.RequestSeq,
+		// The worker's own clock, recorded when the comparison was made.
+		DetectedAt:         time.Now(),
 		Method:             e.Method,
 		Path:               e.Path,
 		Query:              e.Query,

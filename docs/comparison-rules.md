@@ -74,6 +74,33 @@ slow flag set. This keeps a slowdown from being confused with a wrong answer,
 and it is measured per request rather than as an average, so one slow endpoint
 can't be hidden by many fast ones.
 
+### Why the threshold is 200ms
+
+It used to say "arbitrary but large enough that normal jitter doesn't trigger
+it", which is not a definition of significantly slower. So it was measured.
+`experiments/slow_threshold.py` takes every mirrored comparison from a full
+run and looks at `candidate_latency_ms - stable_latency_ms` on the endpoints
+that are not supposed to be slow:
+
+| | |
+|---|---|
+| Samples on endpoints with no latency fault | 5842 |
+| p99 of the difference | 0.378 ms |
+| Largest difference seen | 2.348 ms |
+| The one endpoint that is deliberately slow (R3) | 400.5 ms median, 400.1 ms minimum |
+
+So ordinary variation between the two versions stays under 2.4 ms even at the
+worst sample out of nearly six thousand, and the regression this is meant to
+catch is 400 ms. 200 ms sits between them with about 85x headroom over the
+worst normal sample, and half the size of the real regression.
+
+That gap is wide enough that the exact number barely matters: anything from
+roughly 10 ms to 350 ms would classify this workload identically. What the
+measurement rules out is a threshold chosen so low that normal jitter trips it
+or so high that a real 400 ms regression slips through. Re-run the script
+against a different service and the right number will be different; the method
+is what carries over.
+
 ## Outcomes
 
 Every comparison ends as exactly one of:

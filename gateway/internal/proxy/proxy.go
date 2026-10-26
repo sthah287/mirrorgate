@@ -59,11 +59,15 @@ type Config struct {
 // about requests that were actually mirrored. Skipped traffic has to be
 // counted here or the sampling experiment has no denominator.
 type Stats struct {
-	Eligible        int64 `json:"eligible"`
-	Mirrored        int64 `json:"mirrored"`
-	SkippedInFlight int64 `json:"skipped_in_flight"`
-	Published       int64 `json:"published"`
-	PublishFailed   int64 `json:"publish_failed"`
+	// StartedAt is when this gateway process started. The counters below and
+	// request_seq are both relative to it, so the experiment harness can
+	// treat a restart as the start of a run.
+	StartedAt       time.Time `json:"started_at"`
+	Eligible        int64     `json:"eligible"`
+	Mirrored        int64     `json:"mirrored"`
+	SkippedInFlight int64     `json:"skipped_in_flight"`
+	Published       int64     `json:"published"`
+	PublishFailed   int64     `json:"publish_failed"`
 }
 
 type Proxy struct {
@@ -74,6 +78,7 @@ type Proxy struct {
 	sampler       Sampler
 	shadowTimeout time.Duration
 	mirrorMethods map[string]bool
+	startedAt     time.Time
 
 	slots chan struct{}
 	wg    sync.WaitGroup
@@ -132,6 +137,7 @@ func New(cfg Config, publisher Publisher, sampler Sampler) (*Proxy, error) {
 		sampler:       sampler,
 		shadowTimeout: cfg.ShadowTimeout,
 		mirrorMethods: methods,
+		startedAt:     time.Now(),
 		slots:         make(chan struct{}, cfg.MaxInFlight),
 	}, nil
 }
@@ -171,9 +177,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Sampling is checked before startShadow so a skipped request never pays
 	// for a request copy, a goroutine, or a candidate call.
 	if p.mirrorMethods[r.Method] {
-		p.eligible.Add(1)
+		// The counter value is the request's position in the eligible
+		// stream, which is what gets stored with the comparison.
+		seq := p.eligible.Add(1)
 		if p.sampler.Mirror(r.Method, r.URL.Path) {
-			stableDone = p.startShadow(r, body, requestID)
+			stableDone = p.startShadow(r, body, requestID, seq)
 		}
 	}
 
@@ -206,7 +214,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // startShadow sends a copy of the request to the candidate in a separate
 // goroutine. It returns a channel the caller uses to hand over the stable
 // response once it has it, or nil if the request isn't being mirrored.
-func (p *Proxy) startShadow(r *http.Request, body []byte, requestID string) chan response {
+func (p *Proxy) startShadow(r *http.Request, body []byte, requestID string, seq int64) chan response {
 	select {
 	case p.slots <- struct{}{}:
 	default:
@@ -236,6 +244,7 @@ func (p *Proxy) startShadow(r *http.Request, body []byte, requestID string) chan
 	p.mirrored.Add(1)
 	e := event.Comparison{
 		RequestID:  requestID,
+		RequestSeq: seq,
 		Method:     r.Method,
 		Path:       r.URL.Path,
 		Query:      r.URL.RawQuery,
@@ -310,6 +319,7 @@ func (p *Proxy) publish(ctx context.Context, e event.Comparison, stable, candida
 
 func (p *Proxy) Stats() Stats {
 	return Stats{
+		StartedAt:       p.startedAt,
 		Eligible:        p.eligible.Load(),
 		Mirrored:        p.mirrored.Load(),
 		SkippedInFlight: p.skippedInFlight.Load(),

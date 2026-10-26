@@ -4,6 +4,7 @@ import type {
   EndpointRate,
   GatewayStats,
   Outcome,
+  OutboxStats,
   SamplingStats,
   Stats,
 } from "./types";
@@ -22,6 +23,7 @@ export function fetchStats() {
     stats: Stats;
     gateway: GatewayStats;
     sampling: SamplingStats;
+    outbox: OutboxStats;
   }>("/internal/stats");
 }
 

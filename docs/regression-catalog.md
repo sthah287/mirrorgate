@@ -57,6 +57,20 @@ A regression that is never mirrored is never detected. That is the whole point
 of the sampling experiment, and it is why detection is measured per run rather
 than assumed.
 
+## How often each fault appears
+
+The faults are the same whichever experiment is running. What changes is how
+often the workload sends the request that triggers them:
+
+| Workload | Fault frequency | Why |
+|---|---|---|
+| `experiments/midterm.js` | R1 about 10% of requests, R2-R4 about 5%, R5 1% | week 7, where everything was found every time |
+| `experiments/rare.js` | each fault once in 1000 requests | week 9, where sampling actually starts missing them |
+
+Keeping rarity in the workload rather than in the candidate service means the
+catalog below describes both experiments, and the detection rules never
+change.
+
 ## Controls
 
 Three requests exist to catch false positives. If any of these ever comes out

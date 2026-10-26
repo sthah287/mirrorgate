@@ -69,3 +69,10 @@ export interface EndpointRate {
   reasons: string[];
   signal: { mismatches: number; errors: number; slow: number };
 }
+
+export interface OutboxStats {
+  pending: number;
+  published: number;
+  oldest_pending_sec: number;
+  failed_attempts: number;
+}

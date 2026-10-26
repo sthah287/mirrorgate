@@ -152,6 +152,10 @@ services:
       MAX_SHADOW_IN_FLIGHT: ${MAX_SHADOW_IN_FLIGHT:-100}
       # Overridable so one experiment run can change strategy without editing
       # this file: SAMPLING_MODE=random SAMPLING_RATE=0.25 docker compose up -d gateway
+      # outbox (default) writes events to Postgres for the relay to publish.
+      # direct publishes straight to Redpanda and can lose events during an
+      # outage; it exists so the experiment can measure the difference.
+      PUBLISH_MODE: ${PUBLISH_MODE:-outbox}
       SAMPLING_MODE: ${SAMPLING_MODE:-full}
       SAMPLING_RATE: ${SAMPLING_RATE:-}
       SAMPLING_RULES: ${SAMPLING_RULES:-}
@@ -203,6 +207,37 @@ services:
       COMPARE_SLOW_THRESHOLD_MS: "200"
       OTEL_SERVICE_NAME: comparison-worker
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Moves comparison events from the Postgres outbox to Redpanda. Separate
+  # from the gateway so it can be restarted, or killed mid-run, on its own.
+  outbox-relay:
+    build:
+      context: .
+      dockerfile: outbox-relay/Dockerfile
+    environment:
+      DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
+      KAFKA_BROKERS: redpanda:9092
+      OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
+      OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-200ms}
+      OUTBOX_RETENTION: ${OUTBOX_RETENTION:-1h}
+      OTEL_SERVICE_NAME: outbox-relay
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
     depends_on:
       postgres:
         condition: service_healthy
@@ -231,6 +266,9 @@ services:
     environment:
       TEST_GATEWAY_URL: http://gateway:8080
       TEST_ADMIN_URL: http://gateway:8081
+      # The outbox and storage tests create their own schema in this database
+      # so they never touch the live comparison data.
+      TEST_DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
       TEST_STABLE_URL: http://stable-service:9001
       TEST_CANDIDATE_URL: http://candidate-service:9002
       TEST_MOCK_URL: http://mock-external:9003
@@ -267,6 +305,19 @@ services:
     image: grafana/k6:0.55.0
     profiles: ["test"]
     command: ["run", "/scripts/midterm.js"]
+    volumes:
+      - ./experiments:/scripts
+      - ./results:/results
+    environment:
+      GATEWAY_URL: http://gateway:8080
+
+  # The rare-fault workload for week 9. Script path lives here rather than on
+  # the command line because Git Bash rewrites a bare /scripts/... argument.
+  #   ./experiments/run-rare.sh
+  k6-rare:
+    image: grafana/k6:0.55.0
+    profiles: ["test"]
+    command: ["run", "/scripts/rare.js"]
     volumes:
       - ./experiments:/scripts
       - ./results:/results

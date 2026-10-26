@@ -1,0 +1,236 @@
+{
+  "method": "trial is the unit; t interval and cluster bootstrap over the ten per-trial proportions; pooled Wilson shown only to expose how much narrower assuming independence makes it",
+  "bootstrap_rounds": 20000,
+  "strategies": {
+    "off": {
+      "per_trial_proportions": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "detected": 0,
+      "opportunities": 50,
+      "rate": 0.0,
+      "cluster_t": [
+        0.0,
+        0.0
+      ],
+      "cluster_bootstrap": [
+        0.0,
+        0.0
+      ],
+      "pooled_wilson": [
+        0.0,
+        0.07135003417431873
+      ],
+      "degenerate": true
+    },
+    "full": {
+      "per_trial_proportions": [
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "detected": 50,
+      "opportunities": 50,
+      "rate": 1.0,
+      "cluster_t": [
+        1.0,
+        1.0
+      ],
+      "cluster_bootstrap": [
+        1.0,
+        1.0
+      ],
+      "pooled_wilson": [
+        0.9286499658256813,
+        1.0
+      ],
+      "degenerate": true
+    },
+    "random-50": {
+      "per_trial_proportions": [
+        1.0,
+        0.6,
+        1.0,
+        1.0,
+        1.0,
+        0.8,
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "detected": 47,
+      "opportunities": 50,
+      "rate": 0.9400000000000001,
+      "cluster_t": [
+        0.8434408864995127,
+        1.0
+      ],
+      "cluster_bootstrap": [
+        0.86,
+        1.0
+      ],
+      "pooled_wilson": [
+        0.8378265662912299,
+        0.9793854036353695
+      ],
+      "degenerate": false
+    },
+    "random-25": {
+      "per_trial_proportions": [
+        0.6,
+        0.4,
+        0.2,
+        0.8,
+        0.6,
+        0.8,
+        0.8,
+        0.2,
+        0.4,
+        0.8
+      ],
+      "detected": 28,
+      "opportunities": 50,
+      "rate": 0.56,
+      "cluster_t": [
+        0.3841384908514658,
+        0.7358615091485343
+      ],
+      "cluster_bootstrap": [
+        0.42000000000000004,
+        0.7
+      ],
+      "pooled_wilson": [
+        0.4230578680014353,
+        0.6883801278976466
+      ],
+      "degenerate": false
+    },
+    "random-10": {
+      "per_trial_proportions": [
+        0.6,
+        0.6,
+        0.4,
+        0.2,
+        0.2,
+        0.4,
+        0.0,
+        0.2,
+        0.0,
+        0.0
+      ],
+      "detected": 13,
+      "opportunities": 50,
+      "rate": 0.26,
+      "cluster_t": [
+        0.09412000000000004,
+        0.42588
+      ],
+      "cluster_bootstrap": [
+        0.12000000000000002,
+        0.4
+      ],
+      "pooled_wilson": [
+        0.15871379651367384,
+        0.3955342198899992
+      ],
+      "degenerate": false
+    },
+    "endpoint": {
+      "per_trial_proportions": [
+        1.0,
+        0.4,
+        1.0,
+        1.0,
+        1.0,
+        0.8,
+        0.8,
+        0.8,
+        1.0,
+        1.0
+      ],
+      "detected": 44,
+      "opportunities": 50,
+      "rate": 0.8800000000000001,
+      "cluster_t": [
+        0.741789517040132,
+        1.0
+      ],
+      "cluster_bootstrap": [
+        0.76,
+        0.9800000000000001
+      ],
+      "pooled_wilson": [
+        0.7619492111337642,
+        0.9438247628937535
+      ],
+      "degenerate": false
+    },
+    "risk": {
+      "per_trial_proportions": [
+        0.4,
+        0.4,
+        0.4,
+        0.4,
+        0.2,
+        0.4,
+        0.6,
+        0.6,
+        0.8,
+        0.4
+      ],
+      "detected": 23,
+      "opportunities": 50,
+      "rate": 0.4600000000000001,
+      "cluster_t": [
+        0.3422214348873277,
+        0.5777785651126724
+      ],
+      "cluster_bootstrap": [
+        0.38,
+        0.56
+      ],
+      "pooled_wilson": [
+        0.3296943460178263,
+        0.5960136567161192
+      ],
+      "degenerate": false
+    }
+  },
+  "risk_vs_random10_overall": {
+    "per_trial_difference": 0.2,
+    "paired_t_interval": [
+      -0.04315769368868422,
+      0.44315769368868424
+    ]
+  },
+  "r5_paired": {
+    "risk": 8,
+    "random10": 2,
+    "both": 2,
+    "only_risk": 6,
+    "only_random": 0,
+    "neither": 2,
+    "mcnemar_exact_p": 0.03125,
+    "comparisons_made": 5,
+    "bonferroni_threshold": 0.01,
+    "survives_bonferroni": false,
+    "interpretation": "exploratory; nominally significant unadjusted, does not meet a Bonferroni threshold for five comparisons, and needs more trials to confirm"
+  }
+}
