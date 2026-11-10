@@ -29,9 +29,11 @@ The request sequence is driven by the global iteration number rather than by a
 random choice per request, so every strategy sees the same requests in the
 same order. One request in 100 is the order `POST`.
 
-Each configuration runs 5 times. Trials are the outer loop (all six
-strategies, then all six again), so if the machine slows down partway through
-it affects every strategy roughly equally instead of ruining one of them.
+Each configuration runs 5 times in the midterm experiment, 10 in the week 9
+rare-fault experiment and 20 in the week 12 one. Trials are the outer loop
+(every strategy, then every strategy again), so if the machine slows down
+partway through it affects every strategy roughly equally instead of ruining
+one of them.
 
 ## The measures
 
@@ -134,10 +136,13 @@ samples can be missed.
 
 ## What is not measured
 
-**Broker, relay and worker throughput.** The outbox and the topic both drain
-after k6 finishes and the run waits for both, so the experiment measures what
-was detected, not how fast the pipeline processed it. Outbox depth during the
-run is recorded but not analysed.
+**Broker, relay and worker throughput, in this experiment.** The outbox and
+the topic both drain after k6 finishes and the run waits for both, so this
+experiment measures what was detected, not how fast the pipeline processed
+it. Throughput has its own experiment
+(`experiments/relay-throughput.sh`, `results/pr4/relay-summary.md`), which
+records outbox depth every second, the time to drain, and confirmation delay
+percentiles.
 
 **Multiple machines.** Everything is one laptop.
 
@@ -154,6 +159,54 @@ With P(detect) = 1 - (1 - rate)^3 that is roughly 27% at 10% sampling, 58% at
 separate. Rarity comes from the workload rather than from changes to the
 candidate service, so the regression catalog still describes the same faults.
 
+### Randomised positions
+
+Fixed positions make a run easy to reason about and leave one thing
+impossible to rule out: that a strategy did well because of where the faults
+happened to sit. It mattered most for risk-priority, whose rate climbs during
+a run. With R1 always at request 101, risk-priority always met it before the
+rare-endpoint rule had the 200 requests it needs, so it always met that fault
+at its 10% floor.
+
+`experiments/rare-random.js` draws the positions from a seed instead:
+
+- **Three occurrences per fault per 3000-request trial**, the same count as
+  before, drawn without replacement so no request carries two faults.
+- **The seed is the trial number plus `SEED_BASE`**, so every strategy in one
+  trial sees exactly the same positions and the next trial sees different
+  ones. Comparing strategies on the same traffic was explicit feedback on an
+  earlier report and it still holds; what changes is that the traffic is no
+  longer the same between trials.
+- **The seed and the positions it produced are written into every run file**
+  (`fault_plan`), so a run can be repeated exactly.
+
+The plan also makes a finer measure possible. Because the positions are
+known, a detection can be tied to *which* occurrence was caught rather than
+just to the fault:
+
+| | |
+|---|---|
+| `expected_request_seq` | the positions the workload used, as request sequence numbers |
+| `caught_request_seq` | the ones that produced a stored comparison |
+| `first_caught_occurrence` | 1, 2 or 3; null if the fault was never caught |
+| `requests_after_first_occurrence` | how much traffic passed between the fault first appearing and it being caught |
+
+`request_seq` counts from 1 and the workload's iteration numbers from 0, so a
+fault planned at position *p* should be the comparison with `request_seq`
+*p+1*. Usually it is exactly that. It is not guaranteed to be: k6 spreads
+iterations over 50 virtual users, so a request can reach the gateway a few
+places away from where its iteration number says, and `request_seq` is
+assigned in arrival order.
+
+So a detection is matched to the **nearest** planned position of its fault,
+and the gap is recorded. The planned positions of one fault are hundreds of
+requests apart, so nearest is unambiguous; a detection more than 25 requests
+from any planned position is not matched at all and is listed in
+`detections_off_plan`, which would mean the plan and the run had come apart
+and the positions could not be trusted. Each run also records
+`max_position_drift`, so how often the exact mapping held is a measured
+number rather than an assumption.
+
 ## Known weaknesses
 
 - Five faults is a small sample. A detection rate of 80% means four of five,
@@ -163,9 +216,11 @@ candidate service, so the regression catalog still describes the same faults.
 - Memory is sampled at roughly two second intervals, so short spikes are
   invisible. The CPU numbers do not have this problem.
 - Risk mode starts every run cold, with no history. That is realistic for a
-  gateway that has just been deployed and it is the same for all five trials,
-  but it means these results describe cold-start behaviour.
-- The faults are hardcoded in the candidate rather than injected at random, so
-  they are in the same place every run.
+  gateway that has just been deployed and it is the same for every trial, but
+  it means these results describe cold-start behaviour.
+- The faults are hardcoded in the candidate. Their *positions* are randomised
+  per trial since week 12, but the fault is always on the same endpoint, so
+  this measures finding a known fault in unknown places rather than finding
+  an unknown fault.
 - 3000 requests is a short run. A regression that only appears under sustained
   load would not show up.

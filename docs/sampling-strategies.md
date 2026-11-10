@@ -55,13 +55,67 @@ Those traffic counts age out. They are kept in two buckets and rotated once
 per risk window, and the share is taken over both, so an endpoint that was
 busy an hour ago doesn't go on looking busy forever.
 
-An endpoint is `METHOD /path`. The query string is not part of it, so
+An endpoint is `METHOD /route`. The query string is not part of it, so
 `/api/products?category=audio` and `/api/products` share one score. They are
 the same handler, and splitting on the query would give every distinct query
 its own score and its own traffic share.
 
 **The window** is the last 10 minutes of stored comparisons (`RISK_WINDOW`),
 re-read every 5 seconds (`RISK_REFRESH`).
+
+### Route templates
+
+`RISK_ROUTE_TEMPLATES=true` reduces the path to the route behind it before it
+is scored, so `/api/products/1` and `/api/products/2` are both
+`GET /api/products/{id}`. **It is off by default**, which is a measurement
+rather than a preference; the numbers are at the end of this section. A segment is replaced when it looks like an
+identifier: all digits, a UUID, or a long opaque string with a digit in it.
+Anything else is left alone, so `/api/products` keeps its own score and is
+never folded in with `/api/products/{id}`, and `/api/v2/products` stays as it
+is. Methods stay separate, so `GET /api/orders/{id}` and
+`DELETE /api/orders/{id}` are still two endpoints.
+
+The comparison records keep the original path. Only the sampler's key
+changes, so every stored row, every dashboard list and every result file
+still says which product was asked for.
+
+The risk signals are read out of Postgres grouped by the stored path, which
+means several rows can belong to one route. Their counts are added together
+rather than the last one winning.
+
+This is a trade rather than an improvement:
+
+- **For**: a mismatch found on one id raises the rate for every id behind the
+  same handler, which is what a deployment wants when the bug is in the
+  handler. The sampler also stops holding a key per id, which on a real API
+  is unbounded.
+- **Against**: an id that is a tiny share of traffic on its own no longer
+  counts as rare. Grouped, the ids add up to a busy route, so the +2 rare
+  bonus that per-url scoring gave each individual product goes away.
+
+What the grouping does to the rate table is in
+`results/pr4/templates-summary.md`: five endpoints scored instead of twenty
+on the experiment's workload. What it does to detection is in
+`results/pr4/rare-random/`, over 20 trials with the fault positions
+randomised:
+
+| | templates on | templates off |
+|---|---|---|
+| traffic mirrored | 20.9% | 10.2% |
+| faults caught | 53% | 60% |
+| mirrored requests per fault caught | 236 | 102 |
+
+Paired by trial the difference in detection is -7 points with a 95% interval
+of -17 to +5, so the two are not separated; the difference in cost is not
+close. Grouping doubled the traffic MirrorGate mirrored and bought nothing
+measurable on this workload.
+
+The mechanism is the one described above, running the other way: a single
+mismatch anywhere behind `GET /api/products/{id}` lifts the rate for a route
+carrying three quarters of the traffic, and the ids that carry the faults
+stop counting as rare. Turn it on when the id space is large enough that
+scoring every url would hold an unbounded number of keys, which is a real
+problem this workload does not have.
 
 ### Where the signals come from
 
@@ -107,13 +161,11 @@ and reported as 0, because the rate is per endpoint rather than global.
 
 ### What it doesn't handle yet
 
-An endpoint is the exact path, so a service with ids in the path gets one
-score per id: `/api/products/1` and `/api/products/2` are scored separately
-rather than as one `/api/products/{id}` endpoint. For the test services that
-is 12 products and it is fine. For a real API it means two things: a mismatch
-on one id doesn't raise the rate for the others, and the sampler holds a key
-per id seen in the current window. Grouping by route template is the fix, and
-the gateway doesn't know the templates today.
+Templating is a guess at the route rather than the route itself. The gateway
+does not read the services' route tables, so a path segment that is a word
+rather than an id stays as it is even when it is a parameter, and a service
+whose ids are short words would not be grouped. Reading the real routes from
+the service would be better and is not something the gateway can do today.
 
 If Postgres is unreachable the refresh fails, the warning is logged, and the
 last known signals stay in place, so sampling keeps working at the rates it

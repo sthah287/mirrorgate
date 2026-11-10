@@ -1,0 +1,468 @@
+{
+  "run": "risk-urls-t1",
+  "strategy": "risk-urls",
+  "trial": 1,
+  "mode": "risk",
+  "publish_mode": "outbox",
+  "valid": true,
+  "invalid_reasons": [],
+  "workload": {
+    "script": "experiments/rare.js",
+    "rate_per_s": 100.0,
+    "duration": "30s",
+    "total_requests": 3001,
+    "fault_every": 1000
+  },
+  "sampling": {
+    "mode": "risk",
+    "route_templates": false,
+    "eligible": 3001,
+    "mirrored": 315,
+    "skipped": 2686,
+    "actual_rate_pct": 10.5,
+    "published": 315,
+    "publish_failed": 0,
+    "skipped_in_flight": 0,
+    "endpoints": [
+      {
+        "endpoint": "POST /api/orders",
+        "requests": 3,
+        "share": 0.000999666777740753,
+        "score": 7,
+        "rate": 1,
+        "reasons": [
+          "+3 recent mismatch",
+          "+2 rare endpoint",
+          "+2 write request"
+        ],
+        "signal": {
+          "mismatches": 3,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/7",
+        "requests": 3,
+        "share": 0.000999666777740753,
+        "score": 2,
+        "rate": 0.25,
+        "reasons": [
+          "+2 rare endpoint"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/12",
+        "requests": 3,
+        "share": 0.000999666777740753,
+        "score": 2,
+        "rate": 0.25,
+        "reasons": [
+          "+2 rare endpoint"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/8",
+        "requests": 3,
+        "share": 0.000999666777740753,
+        "score": 2,
+        "rate": 0.25,
+        "reasons": [
+          "+2 rare endpoint"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products",
+        "requests": 3,
+        "share": 0.000999666777740753,
+        "score": 2,
+        "rate": 0.25,
+        "reasons": [
+          "+2 rare endpoint"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /health",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/3",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/7",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/9",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/2",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/11",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/99",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/4",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/10",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/2",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/3",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/5",
+        "requests": 200,
+        "share": 0.06664445184938354,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/1",
+        "requests": 196,
+        "share": 0.06531156281239586,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/products/6",
+        "requests": 195,
+        "share": 0.06497834055314895,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      },
+      {
+        "endpoint": "GET /api/users/1",
+        "requests": 195,
+        "share": 0.06497834055314895,
+        "score": 0,
+        "rate": 0.1,
+        "reasons": [
+          "no risk signals"
+        ],
+        "signal": {
+          "mismatches": 0,
+          "errors": 0,
+          "slow": 0
+        }
+      }
+    ]
+  },
+  "outbox": {
+    "pending": 0,
+    "published": 315,
+    "oldest_pending_sec": 0,
+    "failed_attempts": 0
+  },
+  "stored": {
+    "total": 315,
+    "matched": 312,
+    "different": 3,
+    "errors": 0,
+    "slow": 0,
+    "orders_mirrored": 3,
+    "max_request_seq": 3001
+  },
+  "detection": {
+    "faults_detected": 1,
+    "faults_total": 5,
+    "per_fault": {
+      "R1": {
+        "detected": false,
+        "hits": 0,
+        "requests_until_detection": null,
+        "arrival_delay_ms": null,
+        "confirmation_delay_ms": null,
+        "pipeline_delay_ms": null,
+        "delay_since_gateway_start_ms": null,
+        "description": "price mismatch on /api/products/12"
+      },
+      "R2": {
+        "detected": false,
+        "hits": 0,
+        "requests_until_detection": null,
+        "arrival_delay_ms": null,
+        "confirmation_delay_ms": null,
+        "pipeline_delay_ms": null,
+        "delay_since_gateway_start_ms": null,
+        "description": "candidate 500 on /api/products/8"
+      },
+      "R3": {
+        "detected": false,
+        "hits": 0,
+        "requests_until_detection": null,
+        "arrival_delay_ms": null,
+        "confirmation_delay_ms": null,
+        "pipeline_delay_ms": null,
+        "delay_since_gateway_start_ms": null,
+        "description": "slow /api/products?category=audio"
+      },
+      "R4": {
+        "detected": false,
+        "hits": 0,
+        "requests_until_detection": null,
+        "arrival_delay_ms": null,
+        "confirmation_delay_ms": null,
+        "pipeline_delay_ms": null,
+        "delay_since_gateway_start_ms": null,
+        "description": "timeout on /api/users/7"
+      },
+      "R5": {
+        "detected": true,
+        "hits": 3,
+        "requests_until_detection": 901,
+        "arrival_delay_ms": 8979.5,
+        "confirmation_delay_ms": 9113.2,
+        "pipeline_delay_ms": 133.6,
+        "delay_since_gateway_start_ms": 10791.8,
+        "description": "wrong total on POST /api/orders"
+      }
+    }
+  },
+  "latency_ms": {
+    "p50": 0.516,
+    "p95": 0.912,
+    "p99": 1.441,
+    "avg": 0.588,
+    "max": 5.869
+  },
+  "clean_latency_delta_ms": {
+    "count": 312,
+    "p50": 0.019,
+    "p99": 0.615,
+    "max": 0.791
+  },
+  "resources": {
+    "gateway": {
+      "cpu_seconds": 1.5761,
+      "mem_mean_mb": 16.37,
+      "mem_peak_mb": 18.09,
+      "memory_samples": 16
+    },
+    "candidate-service": {
+      "cpu_seconds": 0.2407,
+      "mem_mean_mb": 12.91,
+      "mem_peak_mb": 13.31,
+      "memory_samples": 16
+    },
+    "stable-service": {
+      "cpu_seconds": 0.7076,
+      "mem_mean_mb": 14.78,
+      "mem_peak_mb": 14.99,
+      "memory_samples": 16
+    },
+    "comparison-worker": {
+      "cpu_seconds": 0.1723,
+      "mem_mean_mb": 10.52,
+      "mem_peak_mb": 10.83,
+      "memory_samples": 16
+    },
+    "outbox-relay": {
+      "cpu_seconds": 0.2133,
+      "mem_mean_mb": 9.61,
+      "mem_peak_mb": 9.76,
+      "memory_samples": 16
+    },
+    "postgres": {
+      "cpu_seconds": 0.5202,
+      "mem_mean_mb": 43.76,
+      "mem_peak_mb": 44.05,
+      "memory_samples": 16
+    }
+  },
+  "resource_method": {
+    "cpu": "cgroup v1 cpuacct.usage delta, exact CPU time for the window",
+    "memory": "docker stats sampled during the window; peak is the largest sample, because cgroup v1 memory.max_usage_in_bytes cannot be reset between runs here"
+  },
+  "side_effects": {
+    "orders_sent_by_client": 3,
+    "orders_mirrored": 3,
+    "calls": {
+      "live_email": 3,
+      "live_payment": 3,
+      "sandbox_email": 3,
+      "sandbox_payment": 3
+    },
+    "isolation_ok": true
+  }
+}

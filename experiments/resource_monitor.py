@@ -29,14 +29,44 @@ import sys
 import time
 from pathlib import Path
 
-CONTAINERS = {
-    "gateway": "mirrorgate-gateway-1",
-    "candidate-service": "mirrorgate-candidate-service-1",
-    "stable-service": "mirrorgate-stable-service-1",
-    "comparison-worker": "mirrorgate-comparison-worker-1",
-    "outbox-relay": "mirrorgate-outbox-relay-1",
-    "postgres": "mirrorgate-postgres-1",
-}
+SERVICES = ["gateway", "candidate-service", "stable-service",
+            "comparison-worker", "outbox-relay", "postgres"]
+
+
+def running_containers():
+    """Every container of the watched services that is up right now.
+
+    Looked up rather than hard coded because a service can have more than one
+    replica: with two comparison workers, a fixed list of names would quietly
+    measure one of them and report it as the cost of both.
+    """
+    try:
+        out = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.SubprocessError:
+        return {}
+    by_service = {}
+    for name in sorted(out.stdout.split()):
+        for service in SERVICES:
+            if re.fullmatch(rf"\w+-{re.escape(service)}-\d+", name):
+                by_service.setdefault(service, []).append(name)
+
+    found = {}
+    for service, names in by_service.items():
+        if len(names) == 1:
+            # One replica keeps the plain service name whatever docker
+            # numbered the container, so a scale down to one does not quietly
+            # stop the measurement.
+            found[service] = names[0]
+            continue
+        for name in names:
+            found[f"{service}#{name.rsplit('-', 1)[1]}"] = name
+    return found
+
+
+CONTAINERS = running_containers()
 
 UNITS = {"b": 1, "kib": 1024, "mib": 1024**2, "gib": 1024**3, "kb": 1000, "mb": 1000**2, "gb": 1000**3}
 
@@ -113,6 +143,24 @@ def main():
             "mem_mean_mb": round(sum(samples) / len(samples) / 1024**2, 2) if samples else None,
             "mem_peak_mb": round(max(samples) / 1024**2, 2) if samples else None,
             "memory_samples": len(samples),
+        }
+
+    # With several replicas of one service, the per-container rows stay and a
+    # row for the service is added that adds them up, so a cost table does
+    # not silently report one replica as the cost of all of them.
+    for service in SERVICES:
+        replicas = [label for label in CONTAINERS if label.startswith(service + "#")]
+        if not replicas:
+            continue
+        cpus = [containers[r]["cpu_seconds"] for r in replicas]
+        peaks = [containers[r]["mem_peak_mb"] for r in replicas]
+        containers[service] = {
+            "cpu_seconds": round(sum(c for c in cpus if c is not None), 4)
+            if any(c is not None for c in cpus) else None,
+            "mem_mean_mb": None,
+            "mem_peak_mb": max((p for p in peaks if p is not None), default=None),
+            "memory_samples": sum(containers[r]["memory_samples"] for r in replicas),
+            "replicas": len(replicas),
         }
 
     out_path.write_text(json.dumps({

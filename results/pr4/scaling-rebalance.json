@@ -1,0 +1,38 @@
+{
+ "label": "scaling-rebalance",
+ "workers_configured": 2,
+ "workers_that_did_work": 2,
+ "rebalance_during_run": true,
+ "workload": {
+  "rate_per_s": 99.16020797911189,
+  "total_requests": 3001
+ },
+ "mirrored": 3001,
+ "stored": 3001,
+ "distinct_request_ids": 3001,
+ "complete": true,
+ "duplicate_rows": 0,
+ "events_handled_per_worker": {
+  "comparison-worker-5": 1893,
+  "comparison-worker-6": 1108
+ },
+ "events_handled_total": 3001,
+ "request_ids_handled_twice": 0,
+ "partitions_per_member": {
+  "172.20.0.3": 1,
+  "172.20.0.13": 2
+ },
+ "latency_ms": {
+  "p50": 0.667,
+  "p95": 0.917
+ },
+ "cpu_seconds": {
+  "candidate-service": 0.9198,
+  "comparison-worker": 0.8285,
+  "gateway": 2.9562,
+  "outbox-relay": 0.6386,
+  "postgres": 2.3824,
+  "stable-service": 0.9372
+ },
+ "cpu_note": "the second worker joined after the monitor started, so its CPU is not included"
+}

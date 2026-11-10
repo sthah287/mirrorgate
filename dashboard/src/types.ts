@@ -55,6 +55,7 @@ export interface SamplingRule {
 export interface SamplingStats {
   mode: "full" | "random" | "endpoint" | "risk";
   rate: number;
+  route_templates: boolean;
   rules?: SamplingRule[];
   mirrored: number;
   skipped: number;

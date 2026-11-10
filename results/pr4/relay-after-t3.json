@@ -1,0 +1,170 @@
+{
+ "label": "after-t3",
+ "workload": {
+  "rate_per_s": 100.0,
+  "duration": "30s",
+  "total_requests": 3001
+ },
+ "mirrored": 3001,
+ "stored": 3001,
+ "complete": true,
+ "backlog": {
+  "peak_pending": 10,
+  "peak_at_second": 10,
+  "drain_seconds_after_load": 5,
+  "drain_throughput_per_s": 2.0,
+  "confirmed_throughput_per_s": 85.7,
+  "confirmed_window_seconds": 35.0
+ },
+ "confirmation_lag_ms": {
+  "p50": 83.1,
+  "p95": 103.6,
+  "max": 2105.0,
+  "min": 58.7
+ },
+ "latency_ms": {
+  "p50": 0.675,
+  "p95": 0.928,
+  "p99": 1.346
+ },
+ "cpu_seconds": {
+  "gateway": 2.8516,
+  "candidate-service": 0.8644,
+  "stable-service": 0.8886,
+  "comparison-worker": 1.0911,
+  "outbox-relay": 0.6217,
+  "postgres": 3.0396
+ },
+ "memory_peak_mb": {
+  "gateway": 17.54,
+  "candidate-service": 12.87,
+  "stable-service": 13.79,
+  "comparison-worker": 11.21,
+  "outbox-relay": 11.49,
+  "postgres": 45.93
+ },
+ "outbox": {
+  "pending": 0,
+  "published": 3001,
+  "oldest_pending_sec": 0,
+  "failed_attempts": 0
+ },
+ "publish_failed": 0,
+ "depth_curve": [
+  {
+   "t": 0,
+   "pending": 0,
+   "stored": 0
+  },
+  {
+   "t": 2,
+   "pending": 8,
+   "stored": 52
+  },
+  {
+   "t": 3,
+   "pending": 9,
+   "stored": 212
+  },
+  {
+   "t": 5,
+   "pending": 7,
+   "stored": 373
+  },
+  {
+   "t": 6,
+   "pending": 6,
+   "stored": 533
+  },
+  {
+   "t": 8,
+   "pending": 8,
+   "stored": 693
+  },
+  {
+   "t": 10,
+   "pending": 10,
+   "stored": 857
+  },
+  {
+   "t": 11,
+   "pending": 6,
+   "stored": 1017
+  },
+  {
+   "t": 13,
+   "pending": 6,
+   "stored": 1177
+  },
+  {
+   "t": 14,
+   "pending": 7,
+   "stored": 1337
+  },
+  {
+   "t": 16,
+   "pending": 7,
+   "stored": 1497
+  },
+  {
+   "t": 18,
+   "pending": 8,
+   "stored": 1657
+  },
+  {
+   "t": 19,
+   "pending": 8,
+   "stored": 1816
+  },
+  {
+   "t": 21,
+   "pending": 6,
+   "stored": 1981
+  },
+  {
+   "t": 22,
+   "pending": 6,
+   "stored": 2147
+  },
+  {
+   "t": 24,
+   "pending": 6,
+   "stored": 2308
+  },
+  {
+   "t": 26,
+   "pending": 6,
+   "stored": 2473
+  },
+  {
+   "t": 27,
+   "pending": 10,
+   "stored": 2636
+  },
+  {
+   "t": 29,
+   "pending": 7,
+   "stored": 2798
+  },
+  {
+   "t": 31,
+   "pending": 8,
+   "stored": 2960
+  },
+  {
+   "t": 32,
+   "pending": 0,
+   "stored": 3001
+  },
+  {
+   "t": 34,
+   "pending": 0,
+   "stored": 3001
+  },
+  {
+   "t": 35,
+   "pending": 0,
+   "stored": 3001
+  }
+ ]
+}

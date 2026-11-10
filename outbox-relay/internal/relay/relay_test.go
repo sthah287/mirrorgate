@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 
+	"mirrorgate/shared/broker"
 	"mirrorgate/shared/event"
 	"mirrorgate/shared/outbox"
 )
@@ -84,18 +85,50 @@ type fakePublisher struct {
 	mu       sync.Mutex
 	sent     []string
 	traceIDs []string
+	batches  []int
 	fail     error
+	// ackFirst makes the publisher accept this many messages and reject the
+	// rest, which is how a partial broker failure looks.
+	ackFirst int
 }
 
-func (f *fakePublisher) PublishStored(ctx context.Context, requestID string, payload []byte) error {
+func (f *fakePublisher) PublishStoredBatch(ctx context.Context, msgs []broker.StoredMessage) ([]string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.fail != nil {
-		return f.fail
+	f.batches = append(f.batches, len(msgs))
+
+	if f.ackFirst > 0 {
+		var acked []string
+		for i, m := range msgs {
+			if i >= f.ackFirst {
+				break
+			}
+			acked = append(acked, m.RequestID)
+			f.sent = append(f.sent, m.RequestID)
+			f.traceIDs = append(f.traceIDs, traceIDOf(m.Traceparent))
+		}
+		return acked, errors.New("broker rejected the rest of the batch")
 	}
-	f.sent = append(f.sent, requestID)
-	f.traceIDs = append(f.traceIDs, trace.SpanContextFromContext(ctx).TraceID().String())
-	return nil
+	if f.fail != nil {
+		return nil, f.fail
+	}
+
+	acked := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		acked = append(acked, m.RequestID)
+		f.sent = append(f.sent, m.RequestID)
+		f.traceIDs = append(f.traceIDs, traceIDOf(m.Traceparent))
+	}
+	return acked, nil
+}
+
+// traceIDOf pulls the trace id out of a W3C traceparent header value.
+func traceIDOf(traceparent string) string {
+	parts := strings.Split(traceparent, "-")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
 }
 
 func (f *fakePublisher) count() int {
@@ -238,5 +271,109 @@ func TestOutboxIgnoresDuplicateRequestIDs(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("%d rows, want 1", n)
+	}
+}
+
+// The whole point of the change: one publish call per batch, not one per row.
+func TestRelayPublishesTheBatchInOneCall(t *testing.T) {
+	store, _ := testStore(t)
+	writeEvents(t, store, 25)
+
+	publisher := &fakePublisher{}
+	sent, err := New(store, publisher, Config{BatchSize: 100}).drainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	if sent != 25 {
+		t.Errorf("published %d, want 25", sent)
+	}
+	if len(publisher.batches) != 1 || publisher.batches[0] != 25 {
+		t.Errorf("publisher saw batches %v, want one call carrying 25", publisher.batches)
+	}
+}
+
+// A broker that takes some of a batch and rejects the rest must leave exactly
+// the rejected rows pending. Marking an unacknowledged event as published
+// would lose it.
+func TestPartialBatchFailureOnlyMarksAcknowledged(t *testing.T) {
+	store, pool := testStore(t)
+	writeEvents(t, store, 10)
+
+	publisher := &fakePublisher{ackFirst: 4}
+	sent, err := New(store, publisher, Config{BatchSize: 10}).drainOnce(context.Background())
+	if err == nil {
+		t.Fatal("expected the partial failure to be reported")
+	}
+	if sent != 4 {
+		t.Errorf("reported %d published, want 4", sent)
+	}
+
+	var published, pending int
+	row := pool.QueryRow(context.Background(), `
+		SELECT count(*) FILTER (WHERE published_at IS NOT NULL),
+		       count(*) FILTER (WHERE published_at IS NULL)
+		FROM comparison_outbox`)
+	if err := row.Scan(&published, &pending); err != nil {
+		t.Fatal(err)
+	}
+	if published != 4 || pending != 6 {
+		t.Errorf("published %d pending %d, want 4 and 6", published, pending)
+	}
+
+	// And the six that were refused go out on the next pass.
+	publisher.ackFirst = 0
+	sent, err = New(store, publisher, Config{BatchSize: 10}).drainOnce(context.Background())
+	if err != nil {
+		t.Fatalf("second drain: %v", err)
+	}
+	if sent != 6 {
+		t.Errorf("second drain published %d, want the 6 that were left", sent)
+	}
+	if left := pendingCount(t, pool); left != 0 {
+		t.Errorf("%d rows still pending", left)
+	}
+}
+
+// When the broker fails without saying which messages it took, nothing may be
+// marked: the batch is retried and the worker drops the duplicates.
+func TestUnknownBatchOutcomeMarksNothing(t *testing.T) {
+	store, pool := testStore(t)
+	writeEvents(t, store, 5)
+
+	publisher := &fakePublisher{fail: errors.New("connection reset")}
+	if _, err := New(store, publisher, Config{}).drainOnce(context.Background()); err == nil {
+		t.Fatal("expected an error")
+	}
+	if left := pendingCount(t, pool); left != 5 {
+		t.Errorf("%d rows pending, want all 5 kept", left)
+	}
+}
+
+// Each row in a batch keeps its own trace, rather than all of them inheriting
+// whatever the relay happened to be doing.
+func TestBatchKeepsPerRowTraces(t *testing.T) {
+	store, pool := testStore(t)
+	writeEvents(t, store, 2)
+
+	first := "4bf92f3577b34da6a3ce929d0e0e4736"
+	second := "0af7651916cd43dd8448eb211c80319c"
+	for id, trace := range map[string]string{"REQ000": first, "REQ001": second} {
+		if _, err := pool.Exec(context.Background(),
+			"UPDATE comparison_outbox SET traceparent = $2 WHERE request_id = $1",
+			id, "00-"+trace+"-00f067aa0ba902b7-01"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	publisher := &fakePublisher{}
+	if _, err := New(store, publisher, Config{}).drainOnce(context.Background()); err != nil {
+		t.Fatalf("drain: %v", err)
+	}
+	got := map[string]bool{}
+	for _, id := range publisher.traceIDs {
+		got[id] = true
+	}
+	if !got[first] || !got[second] {
+		t.Errorf("published traces %v, want both %s and %s", publisher.traceIDs, first, second)
 	}
 }

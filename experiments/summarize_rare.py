@@ -119,6 +119,16 @@ def main():
                       if h.get("arrival_delay_ms", h.get("detection_delay_ms")) is not None]
             confirms = [h["confirmation_delay_ms"] for h in hits
                         if h.get("confirmation_delay_ms") is not None]
+            # Confirmation measured from the start of the run mostly says
+            # when the fault happened to occur, which with randomised
+            # positions is not a property of the strategy. The pipeline delay
+            # is the part the system controls: the candidate answering plus
+            # the outbox, the broker and the worker.
+            pipelines = [h["pipeline_delay_ms"] for h in hits
+                         if h.get("pipeline_delay_ms") is not None]
+            gaps = [t["fault_plan"]["faults"][fault]["requests_after_first_occurrence"]
+                    for t in trials if t.get("fault_plan")
+                    and t["fault_plan"]["faults"][fault]["requests_after_first_occurrence"] is not None]
             low, high = wilson(found, len(hits))
             per_fault[fault] = {
                 "found": found,
@@ -128,8 +138,17 @@ def main():
                 "ci_high": high,
                 "mean_requests_until_detection": mean(seqs),
                 "sd_requests_until_detection": sd(seqs),
+                # Only meaningful when the positions were randomised: with
+                # the faults in a different place every trial, the absolute
+                # position of a detection says more about where the fault was
+                # than about the strategy. How much traffic passed between
+                # the fault first appearing and it being caught does not.
+                "mean_requests_after_first_occurrence": mean(gaps),
+                "sd_requests_after_first_occurrence": sd(gaps),
                 "mean_arrival_delay_ms": mean(delays),
                 "mean_confirmation_delay_ms": mean(confirms),
+                "mean_pipeline_delay_ms": mean(pipelines),
+                "max_pipeline_delay_ms": max(pipelines) if pipelines else None,
             }
 
         total_found = sum(per_fault[f]["found"] for f in FAULTS)
@@ -207,6 +226,10 @@ def main():
               + [fmt(row["per_fault"][f]["mean_requests_until_detection"], 0) for f in FAULTS])
 
     # ---- markdown ----
+    # The randomised workload records the positions it drew. Some of the
+    # tables below only mean something for one workload or the other.
+    randomised = any(run.get("fault_plan") for arm in by_strategy.values()
+                     for run in arm)
     counts = sorted({row["trials"] for row in rows})
     trials = f"{counts[0]}" if len(counts) == 1 else f"{counts[0]} to {counts[-1]}"
     lines = [
@@ -242,7 +265,7 @@ def main():
     lines += [
         "",
         "\\* every trial gave the same answer, so there is no spread to measure and the interval "
-        "collapses to a point. That is a limit of ten trials rather than evidence of precision.",
+        f"collapses to a point. That is a limit of {trials} trials rather than evidence of precision.",
     ]
 
     lines += [
@@ -262,31 +285,81 @@ def main():
                          f"{f['ci_low']*100:.0f}-{f['ci_high']*100:.0f})")
         lines.append(f"| {row['label']} | " + " | ".join(cells) + " |")
 
-    lines += [
-        "",
-        "## Exact requests until first detection",
-        "",
-        "The exact position the gateway gave the detecting request, counted from its restart, "
-        "averaged over the trials where the fault was found. Not an estimate from the request rate.",
-        "",
-        "These runs recorded when the fault-bearing request *arrived*, not when the worker "
-        "*confirmed* the regression. Those are different: the candidate still has to answer, and "
-        "R4 deliberately takes the full two second timeout. Confirmation timing is measured "
-        "separately in `confirmation-timing.json`.",
-        "",
-        "| Strategy | " + " | ".join(FAULTS) + " |",
-        "|---|" + "---|" * len(FAULTS),
-    ]
-    for row in rows:
-        cells = []
-        for fault in FAULTS:
-            f = row["per_fault"][fault]
-            if f["found"] == 0:
-                cells.append("never found")
-            else:
-                cells.append(f"{fmt(f['mean_requests_until_detection'], 0)} ± "
-                             f"{fmt(f['sd_requests_until_detection'], 0)}")
-        lines.append(f"| {row['label']} | " + " | ".join(cells) + " |")
+    if randomised:
+        lines += [
+            "",
+            "## Requests between a fault first appearing and being caught",
+            "",
+            "The fault positions are drawn from a seed, so a detection's absolute "
+            "position says more about where the fault landed than about the strategy. "
+            "This is the gap instead: how much traffic passed between the first "
+            "occurrence of the fault and the request that caught it, averaged over the "
+            "trials where it was caught. Zero means the first occurrence was the one "
+            "caught.",
+            "",
+            "| Strategy | " + " | ".join(FAULTS) + " |",
+            "|---|" + "---|" * len(FAULTS),
+        ]
+        for row in rows:
+            cells = []
+            for fault in FAULTS:
+                f = row["per_fault"][fault]
+                if f["found"] == 0:
+                    cells.append("never found")
+                else:
+                    cells.append(f"{fmt(f['mean_requests_after_first_occurrence'], 0)} ± "
+                                 f"{fmt(f['sd_requests_after_first_occurrence'], 0)}")
+            lines.append(f"| {row['label']} | " + " | ".join(cells) + " |")
+    else:
+        lines += [
+            "",
+            "## Exact requests until first detection",
+            "",
+            "The exact position the gateway gave the detecting request, counted from its restart, "
+            "averaged over the trials where the fault was found. Not an estimate from the request rate.",
+            "",
+            "These runs recorded when the fault-bearing request *arrived*, not when the worker "
+            "*confirmed* the regression. Those are different: the candidate still has to answer, and "
+            "R4 deliberately takes the full two second timeout. Confirmation timing is measured "
+            "separately in `confirmation-timing.json`.",
+            "",
+            "| Strategy | " + " | ".join(FAULTS) + " |",
+            "|---|" + "---|" * len(FAULTS),
+        ]
+        for row in rows:
+            cells = []
+            for fault in FAULTS:
+                f = row["per_fault"][fault]
+                if f["found"] == 0:
+                    cells.append("never found")
+                else:
+                    cells.append(f"{fmt(f['mean_requests_until_detection'], 0)} ± "
+                                 f"{fmt(f['sd_requests_until_detection'], 0)}")
+            lines.append(f"| {row['label']} | " + " | ".join(cells) + " |")
+
+    if any(row["per_fault"][f]["mean_pipeline_delay_ms"] is not None
+           for row in rows for f in FAULTS):
+        lines += [
+            "",
+            "## How long the pipeline took to confirm a fault it had seen",
+            "",
+            "Milliseconds from the fault-bearing request arriving at the gateway to the "
+            "worker storing the comparison that caught it, averaged over the trials "
+            "where it was caught. Not the time from the start of the run: with the "
+            "positions randomised, that number mostly says when the fault happened to "
+            "occur. This one is the part the system controls, and it includes the "
+            "candidate still having to answer, which is why R4 is about two seconds "
+            "everywhere: it spends them waiting out the shadow timeout on purpose.",
+            "",
+            "| Strategy | " + " | ".join(FAULTS) + " |",
+            "|---|" + "---|" * len(FAULTS),
+        ]
+        for row in rows:
+            cells = []
+            for fault in FAULTS:
+                value = row["per_fault"][fault]["mean_pipeline_delay_ms"]
+                cells.append("never found" if value is None else f"{value:,.0f} ms")
+            lines.append(f"| {row['label']} | " + " | ".join(cells) + " |")
 
     lines += [
         "",

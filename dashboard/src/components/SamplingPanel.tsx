@@ -20,6 +20,10 @@ export default function SamplingPanel({ sampling, gateway, endpoints }: Props) {
         <span className="mono muted">
           {sampling.mode}
           {sampling.mode === "risk" && " · adaptive, 10% to 100% by risk score"}
+          {sampling.mode === "risk" &&
+            (sampling.route_templates
+              ? " · grouped by route"
+              : " · scored per URL")}
           {sampling.mode !== "full" &&
             sampling.mode !== "risk" &&
             ` · target ${(sampling.rate * 100).toFixed(0)}%`}

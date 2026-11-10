@@ -103,7 +103,7 @@ func TestFirstMatchingRuleWins(t *testing.T) {
 
 func TestParse(t *testing.T) {
 	t.Run("random rate", func(t *testing.T) {
-		s, err := Parse("random", "0.25", "")
+		s, err := Parse("random", "0.25", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestParse(t *testing.T) {
 	})
 
 	t.Run("full mode ignores the rate", func(t *testing.T) {
-		s, err := Parse("full", "0.25", "")
+		s, err := Parse("full", "0.25", "", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestParse(t *testing.T) {
 	})
 
 	t.Run("endpoint rules", func(t *testing.T) {
-		s, err := Parse("endpoint", "0.1", "/api/products/*=0.5, /api/users/*=0.25,/health=0")
+		s, err := Parse("endpoint", "0.1", "/api/products/*=0.5, /api/users/*=0.25,/health=0", "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,17 +136,32 @@ func TestParse(t *testing.T) {
 		}
 	})
 
+	t.Run("route templates", func(t *testing.T) {
+		s, err := Parse("risk", "", "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s.cfg.RouteTemplates {
+			t.Error("route templates should be off unless they are turned on")
+		}
+		if s, err = Parse("risk", "", "", "true"); err != nil || !s.cfg.RouteTemplates {
+			t.Errorf("RISK_ROUTE_TEMPLATES=true should turn them on, err = %v", err)
+		}
+	})
+
 	t.Run("bad input", func(t *testing.T) {
-		for _, c := range []struct{ mode, rate, rules string }{
-			{"sometimes", "", ""},
-			{"random", "1.5", ""},
-			{"random", "half", ""},
-			{"endpoint", "", ""},
-			{"endpoint", "", "/api/products/*"},
-			{"endpoint", "", "/api/products/*=nope"},
+		for _, c := range []struct{ mode, rate, rules, templates string }{
+			{"sometimes", "", "", ""},
+			{"random", "1.5", "", ""},
+			{"random", "half", "", ""},
+			{"endpoint", "", "", ""},
+			{"endpoint", "", "/api/products/*", ""},
+			{"endpoint", "", "/api/products/*=nope", ""},
+			{"risk", "", "", "sometimes"},
 		} {
-			if _, err := Parse(c.mode, c.rate, c.rules); err == nil {
-				t.Errorf("Parse(%q, %q, %q) should have failed", c.mode, c.rate, c.rules)
+			if _, err := Parse(c.mode, c.rate, c.rules, c.templates); err == nil {
+				t.Errorf("Parse(%q, %q, %q, %q) should have failed",
+					c.mode, c.rate, c.rules, c.templates)
 			}
 		}
 	})

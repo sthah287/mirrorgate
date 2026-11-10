@@ -3,8 +3,9 @@
 # repeated, with the faults rare enough that strategies actually miss them.
 #
 #   ./experiments/run-rare.sh            everything (about 90 minutes)
-#   ./experiments/run-rare.sh risk       one arm, still all trials
-#   TRIALS=1 ./experiments/run-rare.sh   a quick check
+#   ./experiments/run-rare.sh risk,risk-urls   just those arms, all trials
+#   TRIALS=1 ./experiments/run-rare.sh         a quick check
+#   OUT=results/pr4/rare ./experiments/run-rare.sh   write somewhere else
 #
 # Held constant across every run: the workload (experiments/rare.js), the
 # request rate and duration, the faults, the container CPU and memory limits
@@ -16,31 +17,54 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-OUT=results/rare-faults
+# Overridable so a later milestone can run the same experiment without
+# writing into an earlier one's results.
+OUT=${OUT:-results/rare-faults}
 mkdir -p "$OUT"
+# k6 writes its summary from inside the container, where the results
+# directory is mounted at /results, so it needs the path without the prefix.
+RESULT_DIR=${OUT#results/}
 
 TRIALS=${TRIALS:-10}
+# Where to start. A four hour run that dies on a transient Docker error
+# should be resumable without redoing the trials that finished.
+FIRST_TRIAL=${FIRST_TRIAL:-1}
 RATE=${RATE:-100}
 DURATION=${DURATION:-30s}
+# k6-rare puts the faults at fixed slots. k6-rare-random draws their
+# positions from SEED_BASE plus the trial number, so every strategy in a
+# trial sees the same positions and the next trial sees different ones.
+WORKLOAD=${WORKLOAD:-k6-rare}
+SEED_BASE=${SEED_BASE:-}
 # The outbox is the point of week 8, and it also means a missed fault is a
 # sampling decision rather than a lost event.
 PUBLISH_MODE=${PUBLISH_MODE:-outbox}
 
-# name : SAMPLING_MODE : SAMPLING_RATE : SAMPLING_RULES
+# name : SAMPLING_MODE : SAMPLING_RATE : SAMPLING_RULES : RISK_ROUTE_TEMPLATES
 # off mirrors nothing. It detects nothing by definition and is here as the
 # cost and latency baseline.
 ARMS=(
-  "off:random:0:"
-  "full:full::"
-  "random-50:random:0.5:"
-  "random-25:random:0.25:"
-  "random-10:random:0.1:"
-  "endpoint:endpoint:0:/api/products*=0.5,/api/users*=0.25,/api/orders*=0.5,/health=0"
-  "risk:risk::"
+  "off:random:0::"
+  "full:full:::"
+  "random-50:random:0.5::"
+  "random-25:random:0.25::"
+  "random-10:random:0.1::"
+  "endpoint:endpoint:0:/api/products*=0.5,/api/users*=0.25,/api/orders*=0.5,/health=0:"
+  "risk:risk:::true"
+  "risk-urls:risk:::false"
 )
 
+# Retried: Docker Desktop's API occasionally answers one call with a 500,
+# and losing a whole experiment to that is worse than trying again.
 psql_query() {
-  docker compose exec -T postgres psql -U mirrorgate -d mirrorgate "$@"
+  local attempt
+  for attempt in 1 2 3; do
+    if docker compose exec -T postgres psql -U mirrorgate -d mirrorgate "$@"; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
 }
 
 wait_for_gateway() {
@@ -83,7 +107,7 @@ reset_state() {
 }
 
 run_one() {
-  local name=$1 mode=$2 rate=$3 rules=$4 trial=$5
+  local name=$1 mode=$2 rate=$3 rules=$4 templates=$5 trial=$6
   local run="$name-t$trial"
 
   echo
@@ -95,10 +119,34 @@ run_one() {
   # soon as it starts, so a gateway restarted before the truncate would spend
   # the first seconds of the run scored on the previous trial's results.
   reset_state
-  PUBLISH_MODE="$PUBLISH_MODE" SAMPLING_MODE="$mode" SAMPLING_RATE="$rate" SAMPLING_RULES="$rules" \
+  PUBLISH_MODE="$PUBLISH_MODE" SAMPLING_MODE="$mode" SAMPLING_RATE="$rate" \
+    SAMPLING_RULES="$rules" RISK_ROUTE_TEMPLATES="$templates" \
     docker compose up -d --force-recreate gateway >/dev/null 2>&1
   wait_for_gateway
+  # The image carries the sampling code, so a rebuild has to happen before
+  # the arms are compared. Ask the gateway what it is actually running
+  # rather than trusting that the variable reached it.
+  if [[ "$mode" == "risk" ]]; then
+    local want=${templates:-true} got
+    got=$(curl -s http://localhost:8081/internal/sampling |
+      python -c "import sys,json;print(str(json.load(sys.stdin)['sampling']['route_templates']).lower())")
+    if [[ "$got" != "$want" ]]; then
+      echo "gateway reports route_templates=$got, expected $want" >&2
+      exit 1
+    fi
+  fi
   echo "state cleared, gateway restarted cold"
+
+  # The seed belongs to the trial, not to the arm.
+  local seed="" total=""
+  if [[ -n "$SEED_BASE" ]]; then
+    seed=$((SEED_BASE + trial))
+    if [[ "$DURATION" != *s ]]; then
+      echo "SEED_BASE needs DURATION in seconds, like 30s" >&2
+      exit 1
+    fi
+    total=$(( RATE * ${DURATION%s} ))
+  fi
 
   local stopfile="$OUT/.$run.stop"
   rm -f "$stopfile"
@@ -107,8 +155,9 @@ run_one() {
   sleep 1
 
   docker compose run --rm -T \
-    -e RUN_NAME="$run" -e RATE="$RATE" -e DURATION="$DURATION" \
-    k6-rare
+    -e RUN_NAME="$run" -e RATE="$RATE" -e DURATION="$DURATION" -e RESULT_DIR="$RESULT_DIR" \
+    -e SEED="$seed" -e TOTAL="$total" \
+    "$WORKLOAD"
 
   touch "$stopfile"
   wait "$monitor" 2>/dev/null || true
@@ -143,15 +192,15 @@ run_one() {
       -- they are different processes and are reported separately.
       'run_first_received_at', min(received_at),
       'faults', json_build_object(
-        'R1', (SELECT json_build_object('hits', count(*), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
+        'R1', (SELECT json_build_object('hits', count(*), 'seqs', json_agg(request_seq ORDER BY request_seq), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
                FROM request_comparisons WHERE path = '/api/products/12' AND outcome = 'different'),
-        'R2', (SELECT json_build_object('hits', count(*), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
+        'R2', (SELECT json_build_object('hits', count(*), 'seqs', json_agg(request_seq ORDER BY request_seq), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
                FROM request_comparisons WHERE path = '/api/products/8' AND outcome = 'error'),
-        'R3', (SELECT json_build_object('hits', count(*), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
+        'R3', (SELECT json_build_object('hits', count(*), 'seqs', json_agg(request_seq ORDER BY request_seq), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
                FROM request_comparisons WHERE path = '/api/products' AND query = 'category=audio' AND candidate_slow),
-        'R4', (SELECT json_build_object('hits', count(*), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
+        'R4', (SELECT json_build_object('hits', count(*), 'seqs', json_agg(request_seq ORDER BY request_seq), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
                FROM request_comparisons WHERE path = '/api/users/7' AND outcome = 'error'),
-        'R5', (SELECT json_build_object('hits', count(*), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
+        'R5', (SELECT json_build_object('hits', count(*), 'seqs', json_agg(request_seq ORDER BY request_seq), 'first_seq', min(request_seq), 'first_received_at', min(received_at), 'first_detected_at', min(detected_at))
                FROM request_comparisons WHERE path = '/api/orders' AND method = 'POST' AND outcome = 'different')
       ),
       'clean_latency_deltas', (
@@ -165,20 +214,26 @@ run_one() {
     FROM request_comparisons" | tr -d '\r' > "$OUT/$run.db.json"
 
   python experiments/collect_rare.py "$run" "$OUT" "$RATE" "$DURATION" "$mode" "$PUBLISH_MODE"
+  # The fault plan is kept inside the run file, so the intermediate copy goes.
   rm -f "$OUT/$run.stats.json" "$OUT/$run.db.json" "$OUT/$run.k6.json" \
-        "$OUT/$run.sampling.json" "$OUT/$run.external.json" "$OUT/$run.resources.json"
+        "$OUT/$run.sampling.json" "$OUT/$run.external.json" "$OUT/$run.resources.json" \
+        "$OUT/$run.faults.json"
 }
 
+# Built once: every arm has to run the same binary, and --force-recreate
+# alone would quietly keep an older image.
+docker compose build gateway >/dev/null
+
 only=${1:-}
-for trial in $(seq 1 "$TRIALS"); do
+for trial in $(seq "$FIRST_TRIAL" "$TRIALS"); do
   echo
   echo "##################### trial $trial of $TRIALS #####################"
   for entry in "${ARMS[@]}"; do
-    IFS=: read -r name mode rate rules <<< "$entry"
-    if [[ -n "$only" && "$only" != "$name" ]]; then
+    IFS=: read -r name mode rate rules templates <<< "$entry"
+    if [[ -n "$only" && ",$only," != *",$name,"* ]]; then
       continue
     fi
-    run_one "$name" "$mode" "$rate" "$rules" "$trial"
+    run_one "$name" "$mode" "$rate" "$rules" "$templates" "$trial"
   done
 done
 

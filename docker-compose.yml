@@ -147,6 +147,9 @@ services:
       CANDIDATE_VERSION: v2
       DATABASE_URL: postgres://mirrorgate:mirrorgate@postgres:5432/mirrorgate?sslmode=disable
       KAFKA_BROKERS: redpanda:9092
+      # More partitions than workers is fine; fewer means idle workers. The
+      # gateway grows an existing topic to this count at startup.
+      KAFKA_PARTITIONS: ${KAFKA_PARTITIONS:-3}
       SHADOW_TIMEOUT: 2s
       MIRROR_METHODS: ${MIRROR_METHODS:-GET,POST}
       MAX_SHADOW_IN_FLIGHT: ${MAX_SHADOW_IN_FLIGHT:-100}
@@ -163,6 +166,20 @@ services:
       # gateway re-reads them from Postgres.
       RISK_WINDOW: ${RISK_WINDOW:-10m}
       RISK_REFRESH: ${RISK_REFRESH:-5s}
+      # true scores /api/products/1 and /api/products/2 as one route. Off by
+      # default because the week 12 experiment measured it mirroring twice as
+      # much traffic for no gain in detection; see docs/sampling-strategies.md.
+      RISK_ROUTE_TEMPLATES: ${RISK_ROUTE_TEMPLATES:-false}
+      # Request recording and replay, both off by default. REPLAY_TOKEN is
+      # what turns the trigger on, and there is no default for it on purpose:
+      # an endpoint that sends traffic should not exist until someone sets a
+      # token. ./scripts/replay-demo.sh generates one for a local run.
+      REPLAY_RECORD: ${REPLAY_RECORD:-false}
+      REPLAY_RECORD_RATE: ${REPLAY_RECORD_RATE:-0.05}
+      REPLAY_MAX_RECORDS: ${REPLAY_MAX_RECORDS:-2000}
+      REPLAY_RETENTION: ${REPLAY_RETENTION:-1h}
+      REPLAY_TOKEN: ${REPLAY_TOKEN:-}
+      REPLAY_MAX_BATCH: ${REPLAY_MAX_BATCH:-100}
       OTEL_SERVICE_NAME: gateway
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     # Fixed budget so every experiment run gets the same resources. The
@@ -231,6 +248,9 @@ services:
       OUTBOX_BATCH_SIZE: ${OUTBOX_BATCH_SIZE:-100}
       OUTBOX_POLL_INTERVAL: ${OUTBOX_POLL_INTERVAL:-200ms}
       OUTBOX_RETENTION: ${OUTBOX_RETENTION:-1h}
+      # true restores the pre-week-10 behaviour of one publish call per row,
+      # kept so the throughput comparison can be rerun.
+      OUTBOX_SINGLE_PUBLISH: ${OUTBOX_SINGLE_PUBLISH:-false}
       OTEL_SERVICE_NAME: outbox-relay
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     deploy:
@@ -318,6 +338,18 @@ services:
     image: grafana/k6:0.55.0
     profiles: ["test"]
     command: ["run", "/scripts/rare.js"]
+    volumes:
+      - ./experiments:/scripts
+      - ./results:/results
+    environment:
+      GATEWAY_URL: http://gateway:8080
+
+  # The same rare-fault workload with the fault positions drawn from a seed.
+  #   WORKLOAD=k6-rare-random SEED_BASE=70000 ./experiments/run-rare.sh
+  k6-rare-random:
+    image: grafana/k6:0.55.0
+    profiles: ["test"]
+    command: ["run", "/scripts/rare-random.js"]
     volumes:
       - ./experiments:/scripts
       - ./results:/results

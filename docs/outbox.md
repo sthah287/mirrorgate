@@ -31,10 +31,70 @@ The table:
 | `attempts`, `last_error` | why it is still sitting there |
 
 The relay claims a batch with `SELECT ... FOR UPDATE SKIP LOCKED`, publishes
-each row, marks them, and commits. The lock is held for the whole batch, which
-is why there is a publish timeout on it. `SKIP LOCKED` means a second relay
-would pick up different rows rather than block, so running two is safe even
-though one is enough here.
+the whole batch in one call, marks the rows the broker acknowledged, and
+commits. The lock is held for the whole batch, which is why there is a publish
+timeout on it. `SKIP LOCKED` means a second relay would pick up different rows
+rather than block, so running two is safe even though one is enough here.
+
+## Throughput, and why it was 20 events a second
+
+Week 9 measured the pipeline keeping up with about 20 events a second against
+100 requests a second arriving, so a backlog built for the whole run and took
+about two minutes to clear. The suspected cause was the relay publishing one
+message per call through a writer with a 50 ms batch timeout. That was
+arithmetic, not a measurement, so week 10 measured the three candidate costs
+separately against the real Redpanda and Postgres
+(`outbox-relay/internal/relay/diagnostic_test.go`):
+
+| | per event | rate |
+|---|---|---|
+| one publish call per row | 50.6 ms | 20/s |
+| the same 100 rows in one call | under 0.01 ms | 124,760/s |
+| claiming and marking 100 rows in Postgres | 0.04 ms | not the bottleneck |
+
+The database side is 0.08% of the cost. The 50.6 ms matches the writer's 50 ms
+`BatchTimeout` almost exactly: every call waited out the timer because there
+was never a second message to batch with. The batched rate moves between runs
+because a sub-millisecond measurement of 100 messages has little resolution;
+the single-publish figure is the stable one, and it is the one that mattered.
+
+Publishing the claimed rows in one call removed it. Same workload, three
+trials each:
+
+| | one publish per row | batched |
+|---|---|---|
+| peak backlog | 2,485 events | 11 events |
+| queue drain after the load stopped | 127 s | 5 s |
+| confirmation delay, median | 61.5 s | 83 ms |
+| confirmation delay, p95 | 116.7 s | 104 ms |
+| relay CPU per run | 1.41 s | 0.58 s |
+
+The slowest confirmation after the change is about 2.1 s, which is R4's
+deliberate two second candidate timeout rather than pipeline delay.
+
+`OUTBOX_SINGLE_PUBLISH=true` puts the relay back to one call per row, so the
+before column can be reproduced without checking out an old commit.
+
+### A batch can half succeed
+
+Publishing one message at a time made failure simple: it worked or it did not.
+A batch can be partly accepted, and marking a row published that the broker
+never acknowledged would lose the event silently, which is exactly what the
+outbox exists to prevent. So the publisher returns the request ids the broker
+acknowledged alongside the error:
+
+- **all acknowledged**: every row is marked, as before.
+- **some acknowledged**: kafka-go reports this as `kafka.WriteErrors`, one
+  entry per message. Only the acknowledged ids are marked; the rest stay
+  pending and go out on the next pass.
+- **outcome unknown**, such as a connection reset with no per-message detail:
+  nothing is marked. The whole batch is retried, and the worker drops the
+  duplicates.
+
+The third case is the one that matters. It is better to send an event twice
+than to assume an unacknowledged event arrived, and at-least-once delivery
+plus the idempotent insert makes the duplicate harmless. There are tests for
+all three.
 
 ## What is actually guaranteed
 
@@ -116,6 +176,7 @@ Relay:
 | `OUTBOX_MAX_BACKOFF` | `10s` | longest wait while the broker is down |
 | `OUTBOX_PUBLISH_TIMEOUT` | `10s` | bounds one batch, and the lock it holds |
 | `OUTBOX_RETENTION` | `1h` | published rows are deleted after this |
+| `OUTBOX_SINGLE_PUBLISH` | `false` | `true` publishes one row per call, the pre-week-10 behaviour |
 
 Retention matters: without it the table grows for the length of an experiment
 and never shrinks.
@@ -126,11 +187,23 @@ and never shrinks.
 ./scripts/failure-test.sh
 ```
 
-Four scenarios: the worker down, the broker down with the outbox, the relay
-killed mid-run, and the broker down in `direct` mode for comparison. The last
+Five scenarios: the worker down, the broker down with the outbox, the relay
+killed mid-run, the broker down in `direct` mode for comparison, and the same
+events delivered twice. The last
 one is the measurement that makes the rest worth anything, and it is worth
 running more than once: across four runs it lost 10, 1, 0 and 10 of 10 events.
 The outbox scenarios recovered 10 of 10 every time.
+
+The redelivery scenario clears `published_at` on rows the relay has already
+sent, which is what a crash between publishing and committing looks like from
+the database's side, and checks that the second delivery produces no second
+comparison row.
+
+`scripts/trace-check.sh` is the other half of the batching change: it sends a
+burst, so several events are published together, and asks Jaeger whether each
+request still has one trace covering the gateway, the relay and the worker.
+Twenty of twenty, with twenty distinct trace ids, in the run recorded for
+week 10.
 
 `scripts/direct-mode-probe.sh` explains the variability. It restores the
 broker and sends no further traffic, and the events still arrive, so the

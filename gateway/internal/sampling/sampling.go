@@ -43,6 +43,15 @@ type Config struct {
 	// Rules are path patterns with their own rate, used in endpoint mode.
 	// A trailing * matches any suffix: "/api/products/*" = 0.5.
 	Rules []Rule
+	// RouteTemplates groups risk history by route rather than by URL, so
+	// /api/products/1 and /api/products/2 share one score.
+	//
+	// Off by default, which is a measurement rather than a preference: over
+	// 20 trials it mirrored twice as much traffic for no gain in detection,
+	// because one mismatch lifts the rate for a whole busy route. It is
+	// worth turning on when the id space is large enough that scoring every
+	// url would hold an unbounded number of keys. See docs/sampling-strategies.md.
+	RouteTemplates bool
 }
 
 type Rule struct {
@@ -83,8 +92,15 @@ type Sampler struct {
 // Parse builds a sampler from the environment values. Bad input is an error
 // rather than a silent default, because a typo in the rate would quietly
 // invalidate an experiment run.
-func Parse(mode, rate, rules string) (*Sampler, error) {
+func Parse(mode, rate, rules, routeTemplates string) (*Sampler, error) {
 	cfg := Config{Mode: strings.ToLower(strings.TrimSpace(mode)), Rate: 1}
+	if routeTemplates != "" {
+		on, err := strconv.ParseBool(strings.TrimSpace(routeTemplates))
+		if err != nil {
+			return nil, fmt.Errorf("RISK_ROUTE_TEMPLATES must be true or false, got %q", routeTemplates)
+		}
+		cfg.RouteTemplates = on
+	}
 	if cfg.Mode == "" {
 		cfg.Mode = Full
 	}
@@ -146,7 +162,7 @@ func (s *Sampler) Mirror(method, path string) bool {
 		// Counted before the decision, so an endpoint share reflects the
 		// traffic that arrived rather than the traffic that got mirrored.
 		s.total++
-		s.requests[key(method, path)]++
+		s.requests[s.Key(method, path)]++
 		rate, _ = s.riskRate(method, path)
 	}
 
@@ -184,7 +200,7 @@ func (s *Sampler) riskRate(method, path string) (float64, []string) {
 // the rate used for the decision can't drift apart.
 // Callers hold the mutex.
 func (s *Sampler) score(method, path string) (int, []string) {
-	k := key(method, path)
+	k := s.Key(method, path)
 	signal := s.signals[k]
 
 	score := 0
@@ -261,10 +277,18 @@ func isWrite(method string) bool {
 	return false
 }
 
-// key is what an endpoint is scored as. The query string is deliberately not
+// Key is what an endpoint is scored as. The query string is deliberately not
 // part of it: /api/products?category=audio and /api/products are the same
 // handler, and splitting them would give every distinct query its own score.
-func key(method, path string) string {
+// The path is reduced to its route unless route templates are turned off.
+//
+// It is exported because the risk signals read out of Postgres are keyed by
+// the stored path, and they have to be folded together exactly the way the
+// sampler counts traffic.
+func (s *Sampler) Key(method, path string) string {
+	if s.cfg.RouteTemplates {
+		path = Template(path)
+	}
 	return strings.ToUpper(method) + " " + path
 }
 
@@ -343,22 +367,26 @@ func matches(pattern, path string) bool {
 }
 
 type Stats struct {
-	Mode     string  `json:"mode"`
-	Rate     float64 `json:"rate"`
-	Rules    []Rule  `json:"rules,omitempty"`
-	Mirrored int64   `json:"mirrored"`
-	Skipped  int64   `json:"skipped"`
+	Mode string  `json:"mode"`
+	Rate float64 `json:"rate"`
+	// RouteTemplates is reported so an experiment can check the gateway is
+	// running the configuration it was asked for rather than assuming it.
+	RouteTemplates bool   `json:"route_templates"`
+	Rules          []Rule `json:"rules,omitempty"`
+	Mirrored       int64  `json:"mirrored"`
+	Skipped        int64  `json:"skipped"`
 }
 
 func (s *Sampler) Stats() Stats {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return Stats{
-		Mode:     s.cfg.Mode,
-		Rate:     s.cfg.Rate,
-		Rules:    s.cfg.Rules,
-		Mirrored: s.mirrored,
-		Skipped:  s.skipped,
+		Mode:           s.cfg.Mode,
+		Rate:           s.cfg.Rate,
+		RouteTemplates: s.cfg.RouteTemplates,
+		Rules:          s.cfg.Rules,
+		Mirrored:       s.mirrored,
+		Skipped:        s.skipped,
 	}
 }
 

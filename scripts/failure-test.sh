@@ -194,6 +194,45 @@ echo "  (the exact number varies: the client buffers some events and may flush"
 echo "   them when traffic resumes, which is why publish_failed is an upper bound)"
 
 restart_gateway outbox
-echo
 echo "gateway put back in outbox mode"
+
+echo
+echo "=================================================================="
+echo " Scenario 5: the same events are delivered twice"
+echo "=================================================================="
+# At-least-once delivery means the relay can publish a batch, lose the
+# database transaction that marks it, and publish the same rows again after a
+# restart. Clearing published_at reproduces that without having to win a race
+# against the relay. Nothing may be stored twice.
+# Scoped to the ids this scenario sends. The previous scenario's direct-mode
+# events keep arriving for another half minute, because the Kafka client is
+# still retrying them, so a count of the whole table would move on its own
+# and say nothing about redelivery.
+reset_state
+mapfile -t ids < <(send_requests "$REQUESTS")
+wait_until_drained "$REQUESTS"
+first=$(stored_of "${ids[@]}")
+echo "  first delivery: $first of ${#ids[@]} comparisons stored"
+
+psql_query -qc "UPDATE comparison_outbox SET published_at = NULL" >/dev/null
+echo "  marked all $(psql_query -tAc 'SELECT count(*) FROM comparison_outbox' | tr -d '\r') rows unpublished again"
+for _ in $(seq 1 60); do
+  [[ "$(pending_rows)" -eq 0 ]] && break
+  sleep 1
+done
+sleep 3
+
+second=$(stored_of "${ids[@]}")
+dupes=$(psql_query -tAc "
+  SELECT count(*) FROM (
+    SELECT request_id FROM request_comparisons GROUP BY request_id HAVING count(*) > 1
+  ) t" | tr -d '\r')
+echo "  after redelivery: $second stored for those ids, $dupes request ids stored more than once"
+if [[ "$second" == "$first" && "$first" == "${#ids[@]}" && "$dupes" == "0" ]]; then
+  echo "  PASS: the republished events were absorbed, one row per request id"
+else
+  echo "  FAIL: redelivery changed the stored comparisons"
+fi
+
+echo
 echo "all scenarios finished"

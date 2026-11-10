@@ -19,4 +19,9 @@ results/**/*.db.json
 results/**/*.sampling.json
 results/**/*.external.json
 results/**/*.resources.json
+results/**/*.faults.json
+results/**/*.lag.json
+results/**/*.worker.log
+results/**/*.group.txt
 results/**/.*.stop
+results/**/.*.depth

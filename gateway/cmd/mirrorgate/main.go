@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 
 	"mirrorgate/gateway/internal/api"
 	"mirrorgate/gateway/internal/proxy"
+	"mirrorgate/gateway/internal/replay"
 	"mirrorgate/gateway/internal/sampling"
 	"mirrorgate/shared/broker"
 	"mirrorgate/shared/event"
@@ -50,7 +52,13 @@ func run() error {
 		return errors.New("RISK_REFRESH must be a duration like 5s")
 	}
 
-	sampler, err := sampling.Parse(os.Getenv("SAMPLING_MODE"), os.Getenv("SAMPLING_RATE"), os.Getenv("SAMPLING_RULES"))
+	sampler, err := sampling.Parse(os.Getenv("SAMPLING_MODE"), os.Getenv("SAMPLING_RATE"),
+		os.Getenv("SAMPLING_RULES"), os.Getenv("RISK_ROUTE_TEMPLATES"))
+	if err != nil {
+		return err
+	}
+
+	recordCfg, runnerCfg, err := replayConfig()
 	if err != nil {
 		return err
 	}
@@ -82,7 +90,14 @@ func run() error {
 
 	brokers := env("KAFKA_BROKERS", "localhost:19092")
 	topic := env("KAFKA_TOPIC", event.Topic)
-	if err := broker.EnsureTopic(ctx, brokers, topic, 1); err != nil {
+	// Partitions are what let more than one comparison worker run at a time:
+	// a consumer group hands each partition to one member, so two workers on
+	// a one-partition topic leave one of them idle.
+	partitions, err := strconv.Atoi(env("KAFKA_PARTITIONS", "3"))
+	if err != nil || partitions < 1 {
+		return errors.New("KAFKA_PARTITIONS must be a positive number")
+	}
+	if err := broker.EnsureTopic(ctx, brokers, topic, partitions); err != nil {
 		return err
 	}
 
@@ -104,12 +119,44 @@ func run() error {
 		return fmt.Errorf("PUBLISH_MODE must be outbox or direct, got %q", publishMode)
 	}
 
+	// Recording and replay are separate switches. Recording with no token
+	// keeps a sample nobody can replay; a token with recording off can only
+	// replay what is already there.
+	var recorder *replay.Recorder
+	var runner *replay.Runner
+	if recordCfg.Enabled || runnerCfg.Token != "" {
+		if err := replay.EnsureSchema(ctx, store.Pool()); err != nil {
+			return fmt.Errorf("replay schema: %w", err)
+		}
+	}
+	if recordCfg.Enabled {
+		recorder = replay.NewRecorder(store.Pool(), recordCfg, rand.Float64)
+		cfg.Recorder = recorder
+		go recorder.Run(ctx)
+	}
+	if runnerCfg.Token != "" {
+		if runner, err = replay.NewRunner(store.Pool(), cfg.CandidateURL, runnerCfg); err != nil {
+			return err
+		}
+	}
+
 	mirror, err := proxy.New(cfg, publisher, sampler)
 	if err != nil {
 		return err
 	}
 
-	internalAPI := api.New(store, mirror, sampler, outboxStore, api.Deployment{
+	// Typed nils would make the api see an interface that is not nil, so the
+	// two optional pieces are only handed over when they exist.
+	var apiRecorder api.Recorder
+	if recorder != nil {
+		apiRecorder = recorder
+	}
+	var apiReplayer api.Replayer
+	if runner != nil {
+		apiReplayer = runner
+	}
+
+	internalAPI := api.New(store, mirror, sampler, outboxStore, apiRecorder, apiReplayer, api.Deployment{
 		StableVersion:    env("STABLE_VERSION", "v1"),
 		CandidateVersion: env("CANDIDATE_VERSION", "v2"),
 		StableURL:        cfg.StableURL,
@@ -143,7 +190,8 @@ func run() error {
 	slog.Info("mirroring traffic", "stable", cfg.StableURL, "candidate", cfg.CandidateURL,
 		"shadow_timeout", cfg.ShadowTimeout, "methods", cfg.MirrorMethods,
 		"sampling_mode", sampleStats.Mode, "sampling_rate", sampleStats.Rate,
-		"publish_mode", publishMode)
+		"publish_mode", publishMode, "route_templates", sampleStats.RouteTemplates,
+		"recording", recordCfg.Enabled, "replay_trigger", runnerCfg.Token != "")
 
 	select {
 	case err := <-errs:
@@ -163,6 +211,40 @@ func run() error {
 		slog.Warn("shadow requests still running at shutdown", "err", err)
 	}
 	return adminServer.Shutdown(shutdownCtx)
+}
+
+// replayConfig reads the recording and replay settings. Both are off unless
+// they are configured, and a bad value is an error rather than a quiet
+// default, because recording traffic is not something to turn on by accident.
+func replayConfig() (replay.Config, replay.RunnerConfig, error) {
+	var rec replay.Config
+	var run replay.RunnerConfig
+
+	rec.Enabled = env("REPLAY_RECORD", "false") == "true"
+	rate, err := strconv.ParseFloat(env("REPLAY_RECORD_RATE", "0.05"), 64)
+	if err != nil || rate < 0 || rate > 1 {
+		return rec, run, errors.New("REPLAY_RECORD_RATE must be between 0 and 1")
+	}
+	rec.Rate = rate
+
+	if rec.MaxRecords, err = strconv.Atoi(env("REPLAY_MAX_RECORDS", "2000")); err != nil || rec.MaxRecords < 1 {
+		return rec, run, errors.New("REPLAY_MAX_RECORDS must be a positive number")
+	}
+	if rec.Retention, err = time.ParseDuration(env("REPLAY_RETENTION", "1h")); err != nil || rec.Retention <= 0 {
+		return rec, run, errors.New("REPLAY_RETENTION must be a duration like 1h")
+	}
+	if rec.MaxURLBytes, err = strconv.Atoi(env("REPLAY_MAX_URL_BYTES", "2048")); err != nil || rec.MaxURLBytes < 1 {
+		return rec, run, errors.New("REPLAY_MAX_URL_BYTES must be a positive number")
+	}
+
+	run.Token = os.Getenv("REPLAY_TOKEN")
+	if run.MaxBatch, err = strconv.Atoi(env("REPLAY_MAX_BATCH", "100")); err != nil || run.MaxBatch < 1 {
+		return rec, run, errors.New("REPLAY_MAX_BATCH must be a positive number")
+	}
+	if run.Timeout, err = time.ParseDuration(env("REPLAY_TIMEOUT", "5s")); err != nil || run.Timeout <= 0 {
+		return rec, run, errors.New("REPLAY_TIMEOUT must be a duration like 5s")
+	}
+	return rec, run, nil
 }
 
 func env(key, fallback string) string {
@@ -192,13 +274,18 @@ func refreshRisk(ctx context.Context, store *storage.Store, sampler *sampling.Sa
 		if err != nil {
 			slog.Warn("refresh risk signals", "err", err)
 		} else {
+			// Postgres groups by the stored path, which is the original
+			// URL. Several of those rows can be the same endpoint once the
+			// sampler templates the path, so their counts add up rather
+			// than the last one winning.
 			signals := make(map[string]sampling.Signal, len(rows))
 			for _, r := range rows {
-				signals[strings.ToUpper(r.Method)+" "+r.Path] = sampling.Signal{
-					Mismatches: r.Mismatches,
-					Errors:     r.Errors,
-					Slow:       r.Slow,
-				}
+				k := sampler.Key(r.Method, r.Path)
+				signal := signals[k]
+				signal.Mismatches += r.Mismatches
+				signal.Errors += r.Errors
+				signal.Slow += r.Slow
+				signals[k] = signal
 			}
 			sampler.UpdateSignals(signals)
 		}

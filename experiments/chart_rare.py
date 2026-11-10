@@ -1,7 +1,8 @@
 """Chart the rare-fault results.
 
-    python experiments/chart_rare.py            reads results/rare-faults
+    python experiments/chart_rare.py                      reads results/rare-faults
     python experiments/chart_rare.py out.png
+    python experiments/chart_rare.py out.png results/pr4/rare-random
 
 Two panels, because the experiment asks two things: how often does each
 strategy catch a rare fault, and what does it cost to run.
@@ -24,7 +25,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-ORDER = ["off", "full", "random-50", "random-25", "random-10", "endpoint", "risk"]
+ORDER = ["off", "full", "random-50", "random-25", "random-10", "endpoint",
+         "risk", "risk-urls"]
 LABELS = {
     "off": "off\n0%",
     "full": "full\n100%",
@@ -33,6 +35,7 @@ LABELS = {
     "random-10": "random\n10%",
     "endpoint": "endpoint\nrules",
     "risk": "risk\npriority",
+    "risk-urls": "risk, no\ntemplates",
 }
 FAULTS = ["R1", "R2", "R3", "R4", "R5"]
 CONTAINERS = ["gateway", "candidate-service", "comparison-worker", "outbox-relay", "postgres"]
@@ -51,7 +54,7 @@ def cluster_interval(proportions, seed=20261026, rounds=20000):
 
 
 def main():
-    out = Path("results/rare-faults")
+    out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("results/rare-faults")
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else out / "strategies.png"
 
     runs = {}
@@ -66,7 +69,9 @@ def main():
         return
 
     strategies = [s for s in ORDER if s in runs]
-    trials = len(runs[strategies[0]])
+    counts = sorted({len(runs[s]) for s in strategies})
+    trials = counts[0] if len(counts) == 1 else f"{counts[0]} to {counts[-1]}"
+
 
     probs, lows, highs, rates, cpus = [], [], [], [], []
     for name in strategies:
@@ -85,14 +90,26 @@ def main():
             for r in runs[name]
         ))
 
-    fig, (left, right) = plt.subplots(1, 2, figsize=(13, 5))
+    randomised = any(r.get('fault_plan') for rs in runs.values() for r in rs)
+    placement = ("fault positions drawn from a recorded seed, three per fault"
+                 if randomised else "each fault once in 1000 requests")
+    fig, (left, right) = plt.subplots(1, 2, figsize=(14, 5))
     fig.suptitle(
         f"MirrorGate rare-fault experiment, {trials} trials per strategy "
-        f"(3000 requests, each fault once in 1000)",
+        f"(3000 requests, {placement})",
         fontsize=12,
     )
 
-    colors = ["#9aa4b1" if s == "off" else "#4a6fa5" for s in strategies]
+    # The two risk arms are the week 11 comparison, so they are told apart
+    # from the fixed-rate strategies they sit beside.
+    colors = []
+    for name in strategies:
+        if name == "off":
+            colors.append("#9aa4b1")
+        elif name.startswith("risk"):
+            colors.append("#c2663f")
+        else:
+            colors.append("#2f6fb0")
     left.bar(range(len(strategies)), probs, yerr=[lows, highs], capsize=5,
              color=colors, width=0.6)
     left.set_xticks(range(len(strategies)))
@@ -108,6 +125,13 @@ def main():
         inside = p > 20
         left.text(i, p / 2 if inside else p + highs[i] + 4, f"{p:.0f}%", ha="center",
                   color="white" if inside else "#333", fontsize=10, fontweight="bold")
+    # Risk mode picks its own rate, so the one number its name does not
+    # carry is how much traffic it actually mirrored. Without it the two
+    # risk bars look like they cost what the 10% bar costs.
+    for i, name in enumerate(strategies):
+        if name.startswith("risk"):
+            left.text(i, probs[i] + highs[i] + 6, f"mirrored {rates[i]:.0f}%",
+                      ha="center", fontsize=9, color="#6b6b6b")
     left.grid(axis="y", alpha=0.25)
     left.set_axisbelow(True)
 

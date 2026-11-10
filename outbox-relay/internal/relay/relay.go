@@ -15,14 +15,19 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
+	"mirrorgate/shared/broker"
 	"mirrorgate/shared/outbox"
 )
 
 // Publisher is the piece of the broker the relay needs. Keeping it an
 // interface means a test can make publishing fail on demand.
 type Publisher interface {
-	PublishStored(ctx context.Context, requestID string, payload []byte) error
+	// PublishStoredBatch sends a batch and returns the request ids the
+	// broker acknowledged. An error with a shorter acknowledged list means a
+	// partial failure; the rest stay unpublished and are retried.
+	PublishStoredBatch(ctx context.Context, msgs []broker.StoredMessage) ([]string, error)
 }
 
 var tracer = otel.Tracer("mirrorgate/outbox-relay")
@@ -35,6 +40,10 @@ type Config struct {
 	// PublishTimeout bounds one batch. The claiming transaction is open while
 	// the batch publishes, so this is also how long rows can stay locked.
 	PublishTimeout time.Duration
+	// SinglePublish restores the original behaviour of one publish call per
+	// row. It is slow on purpose and exists so the before and after
+	// measurement can be reproduced without checking out an old commit.
+	SinglePublish bool
 }
 
 type Relay struct {
@@ -111,48 +120,101 @@ func (r *Relay) drainOnce(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	published := make([]string, 0, len(pending))
-	for _, p := range pending {
-		if err := r.publishOne(batchCtx, p); err != nil {
-			// Stop at the first failure. Everything already published in this
-			// batch still gets marked, so a partial outage doesn't replay the
-			// whole batch.
-			if markErr := r.finish(batchCtx, tx, published); markErr != nil {
-				slog.Error("could not mark the published part of a failed batch", "err", markErr)
-			}
-			r.recordFailure(ctx, pending[len(published):], err)
-			return len(published), err
+	// One span per row, so each event stays in the trace of the request that
+	// produced it, but a single publish call for the whole batch.
+	msgs, spans := r.prepare(batchCtx, pending)
+	acked, publishErr := r.publish(batchCtx, msgs)
+	for _, span := range spans {
+		if publishErr != nil {
+			span.RecordError(publishErr)
+			span.SetStatus(codes.Error, "publish failed")
 		}
-		published = append(published, p.RequestID)
+		span.End()
 	}
 
-	if err := r.finish(batchCtx, tx, published); err != nil {
+	if publishErr != nil {
+		// Only the acknowledged ones are marked. Anything the broker did not
+		// confirm stays pending and goes out again next pass.
+		if markErr := r.finish(batchCtx, tx, acked); markErr != nil {
+			slog.Error("could not mark the acknowledged part of a failed batch", "err", markErr)
+		}
+		r.recordFailure(ctx, remaining(pending, acked), publishErr)
+		return len(acked), publishErr
+	}
+
+	if err := r.finish(batchCtx, tx, acked); err != nil {
 		// The events reached the broker but the rows are still unpublished,
 		// so they will be sent again. The worker drops duplicates by
 		// request id, which is why that matters.
 		r.recordFailure(ctx, pending, err)
 		return 0, err
 	}
-	return len(published), nil
+	return len(acked), nil
 }
 
-// publishOne rebuilds the request's trace from the traceparent stored with
-// the row, so the relay hop shows up inside the original trace instead of
-// starting a new one.
-func (r *Relay) publishOne(ctx context.Context, p outbox.Pending) error {
-	if p.Traceparent != "" {
-		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{"traceparent": p.Traceparent})
+// publish sends the batch, or one message at a time when the slow path is
+// turned on for comparison.
+func (r *Relay) publish(ctx context.Context, msgs []broker.StoredMessage) ([]string, error) {
+	if !r.cfg.SinglePublish {
+		return r.publisher.PublishStoredBatch(ctx, msgs)
 	}
-	ctx, span := tracer.Start(ctx, "relay publish")
-	defer span.End()
-	span.SetAttributes(attribute.String("mirrorgate.request_id", p.RequestID))
+	var acked []string
+	for _, m := range msgs {
+		one, err := r.publisher.PublishStoredBatch(ctx, []broker.StoredMessage{m})
+		acked = append(acked, one...)
+		if err != nil {
+			return acked, err
+		}
+	}
+	return acked, nil
+}
 
-	if err := r.publisher.PublishStored(ctx, p.RequestID, p.Payload); err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "publish failed")
-		return err
+// prepare turns claimed rows into messages, restoring each row's trace so the
+// relay hop lands inside the original request's trace rather than starting a
+// new one. The returned spans are still open and the caller ends them.
+func (r *Relay) prepare(ctx context.Context, pending []outbox.Pending) ([]broker.StoredMessage, []trace.Span) {
+	msgs := make([]broker.StoredMessage, 0, len(pending))
+	spans := make([]trace.Span, 0, len(pending))
+
+	for _, p := range pending {
+		rowCtx := ctx
+		if p.Traceparent != "" {
+			rowCtx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{"traceparent": p.Traceparent})
+		}
+		rowCtx, span := tracer.Start(rowCtx, "relay publish")
+		span.SetAttributes(attribute.String("mirrorgate.request_id", p.RequestID))
+
+		// The message carries this span's context, not the caller's, so the
+		// worker links to the relay hop for this specific request.
+		carrier := propagation.MapCarrier{}
+		otel.GetTextMapPropagator().Inject(rowCtx, carrier)
+
+		msgs = append(msgs, broker.StoredMessage{
+			RequestID:   p.RequestID,
+			Payload:     p.Payload,
+			Traceparent: carrier.Get("traceparent"),
+		})
+		spans = append(spans, span)
 	}
-	return nil
+	return msgs, spans
+}
+
+// remaining returns the rows that were not acknowledged.
+func remaining(pending []outbox.Pending, acked []string) []outbox.Pending {
+	if len(acked) == 0 {
+		return pending
+	}
+	done := make(map[string]bool, len(acked))
+	for _, id := range acked {
+		done[id] = true
+	}
+	out := make([]outbox.Pending, 0, len(pending)-len(acked))
+	for _, p := range pending {
+		if !done[p.RequestID] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (r *Relay) finish(ctx context.Context, tx pgx.Tx, published []string) error {

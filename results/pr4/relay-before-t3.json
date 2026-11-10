@@ -1,0 +1,555 @@
+{
+ "label": "before-t3",
+ "workload": {
+  "rate_per_s": 100.0,
+  "duration": "30s",
+  "total_requests": 3000
+ },
+ "mirrored": 3000,
+ "stored": 3000,
+ "complete": true,
+ "backlog": {
+  "peak_pending": 2469,
+  "peak_at_second": 33,
+  "drain_seconds_after_load": 127,
+  "drain_throughput_per_s": 19.4,
+  "confirmed_throughput_per_s": 19.1,
+  "confirmed_window_seconds": 157.0
+ },
+ "confirmation_lag_ms": {
+  "p50": 61339.6,
+  "p95": 116539.1,
+  "max": 122680.5,
+  "min": 98.7
+ },
+ "latency_ms": {
+  "p50": 0.674,
+  "p95": 0.919,
+  "p99": 1.292
+ },
+ "cpu_seconds": {
+  "gateway": 3.3296,
+  "candidate-service": 1.3141,
+  "stable-service": 1.3671,
+  "comparison-worker": 1.8793,
+  "outbox-relay": 1.4104,
+  "postgres": 9.401
+ },
+ "memory_peak_mb": {
+  "gateway": 21.17,
+  "candidate-service": 12.66,
+  "stable-service": 13.2,
+  "comparison-worker": 11.43,
+  "outbox-relay": 13.51,
+  "postgres": 50.09
+ },
+ "outbox": {
+  "pending": 0,
+  "published": 3000,
+  "oldest_pending_sec": 0,
+  "failed_attempts": 0
+ },
+ "publish_failed": 0,
+ "depth_curve": [
+  {
+   "t": 0,
+   "pending": 0,
+   "stored": 0
+  },
+  {
+   "t": 2,
+   "pending": 31,
+   "stored": 11
+  },
+  {
+   "t": 4,
+   "pending": 166,
+   "stored": 42
+  },
+  {
+   "t": 5,
+   "pending": 325,
+   "stored": 74
+  },
+  {
+   "t": 7,
+   "pending": 488,
+   "stored": 106
+  },
+  {
+   "t": 8,
+   "pending": 547,
+   "stored": 137
+  },
+  {
+   "t": 10,
+   "pending": 706,
+   "stored": 169
+  },
+  {
+   "t": 12,
+   "pending": 864,
+   "stored": 201
+  },
+  {
+   "t": 13,
+   "pending": 1031,
+   "stored": 233
+  },
+  {
+   "t": 15,
+   "pending": 1090,
+   "stored": 264
+  },
+  {
+   "t": 16,
+   "pending": 1251,
+   "stored": 296
+  },
+  {
+   "t": 18,
+   "pending": 1416,
+   "stored": 328
+  },
+  {
+   "t": 20,
+   "pending": 1476,
+   "stored": 361
+  },
+  {
+   "t": 21,
+   "pending": 1641,
+   "stored": 392
+  },
+  {
+   "t": 23,
+   "pending": 1800,
+   "stored": 424
+  },
+  {
+   "t": 25,
+   "pending": 1861,
+   "stored": 456
+  },
+  {
+   "t": 26,
+   "pending": 2023,
+   "stored": 487
+  },
+  {
+   "t": 28,
+   "pending": 2183,
+   "stored": 519
+  },
+  {
+   "t": 29,
+   "pending": 2243,
+   "stored": 551
+  },
+  {
+   "t": 31,
+   "pending": 2403,
+   "stored": 582
+  },
+  {
+   "t": 33,
+   "pending": 2469,
+   "stored": 613
+  },
+  {
+   "t": 34,
+   "pending": 2369,
+   "stored": 645
+  },
+  {
+   "t": 36,
+   "pending": 2369,
+   "stored": 675
+  },
+  {
+   "t": 37,
+   "pending": 2369,
+   "stored": 707
+  },
+  {
+   "t": 39,
+   "pending": 2269,
+   "stored": 738
+  },
+  {
+   "t": 41,
+   "pending": 2269,
+   "stored": 770
+  },
+  {
+   "t": 42,
+   "pending": 2269,
+   "stored": 801
+  },
+  {
+   "t": 44,
+   "pending": 2269,
+   "stored": 832
+  },
+  {
+   "t": 45,
+   "pending": 2169,
+   "stored": 864
+  },
+  {
+   "t": 47,
+   "pending": 2169,
+   "stored": 897
+  },
+  {
+   "t": 49,
+   "pending": 2169,
+   "stored": 927
+  },
+  {
+   "t": 50,
+   "pending": 2069,
+   "stored": 958
+  },
+  {
+   "t": 52,
+   "pending": 2069,
+   "stored": 990
+  },
+  {
+   "t": 53,
+   "pending": 2069,
+   "stored": 1022
+  },
+  {
+   "t": 55,
+   "pending": 1969,
+   "stored": 1053
+  },
+  {
+   "t": 57,
+   "pending": 1969,
+   "stored": 1084
+  },
+  {
+   "t": 58,
+   "pending": 1969,
+   "stored": 1114
+  },
+  {
+   "t": 60,
+   "pending": 1869,
+   "stored": 1147
+  },
+  {
+   "t": 61,
+   "pending": 1869,
+   "stored": 1178
+  },
+  {
+   "t": 63,
+   "pending": 1869,
+   "stored": 1209
+  },
+  {
+   "t": 65,
+   "pending": 1769,
+   "stored": 1240
+  },
+  {
+   "t": 66,
+   "pending": 1769,
+   "stored": 1271
+  },
+  {
+   "t": 68,
+   "pending": 1769,
+   "stored": 1303
+  },
+  {
+   "t": 69,
+   "pending": 1769,
+   "stored": 1334
+  },
+  {
+   "t": 71,
+   "pending": 1669,
+   "stored": 1366
+  },
+  {
+   "t": 73,
+   "pending": 1669,
+   "stored": 1397
+  },
+  {
+   "t": 74,
+   "pending": 1669,
+   "stored": 1428
+  },
+  {
+   "t": 76,
+   "pending": 1569,
+   "stored": 1460
+  },
+  {
+   "t": 77,
+   "pending": 1569,
+   "stored": 1491
+  },
+  {
+   "t": 79,
+   "pending": 1569,
+   "stored": 1522
+  },
+  {
+   "t": 80,
+   "pending": 1469,
+   "stored": 1553
+  },
+  {
+   "t": 82,
+   "pending": 1469,
+   "stored": 1585
+  },
+  {
+   "t": 84,
+   "pending": 1469,
+   "stored": 1616
+  },
+  {
+   "t": 85,
+   "pending": 1369,
+   "stored": 1647
+  },
+  {
+   "t": 87,
+   "pending": 1369,
+   "stored": 1679
+  },
+  {
+   "t": 88,
+   "pending": 1369,
+   "stored": 1711
+  },
+  {
+   "t": 90,
+   "pending": 1269,
+   "stored": 1743
+  },
+  {
+   "t": 92,
+   "pending": 1269,
+   "stored": 1774
+  },
+  {
+   "t": 93,
+   "pending": 1269,
+   "stored": 1805
+  },
+  {
+   "t": 95,
+   "pending": 1169,
+   "stored": 1836
+  },
+  {
+   "t": 96,
+   "pending": 1169,
+   "stored": 1868
+  },
+  {
+   "t": 98,
+   "pending": 1169,
+   "stored": 1899
+  },
+  {
+   "t": 100,
+   "pending": 1169,
+   "stored": 1931
+  },
+  {
+   "t": 101,
+   "pending": 1069,
+   "stored": 1962
+  },
+  {
+   "t": 103,
+   "pending": 1069,
+   "stored": 1993
+  },
+  {
+   "t": 104,
+   "pending": 1069,
+   "stored": 2025
+  },
+  {
+   "t": 106,
+   "pending": 969,
+   "stored": 2056
+  },
+  {
+   "t": 108,
+   "pending": 969,
+   "stored": 2087
+  },
+  {
+   "t": 109,
+   "pending": 969,
+   "stored": 2119
+  },
+  {
+   "t": 111,
+   "pending": 869,
+   "stored": 2151
+  },
+  {
+   "t": 112,
+   "pending": 869,
+   "stored": 2182
+  },
+  {
+   "t": 114,
+   "pending": 869,
+   "stored": 2213
+  },
+  {
+   "t": 116,
+   "pending": 769,
+   "stored": 2244
+  },
+  {
+   "t": 117,
+   "pending": 769,
+   "stored": 2276
+  },
+  {
+   "t": 119,
+   "pending": 769,
+   "stored": 2308
+  },
+  {
+   "t": 120,
+   "pending": 669,
+   "stored": 2339
+  },
+  {
+   "t": 122,
+   "pending": 669,
+   "stored": 2370
+  },
+  {
+   "t": 124,
+   "pending": 669,
+   "stored": 2401
+  },
+  {
+   "t": 125,
+   "pending": 669,
+   "stored": 2433
+  },
+  {
+   "t": 127,
+   "pending": 569,
+   "stored": 2464
+  },
+  {
+   "t": 128,
+   "pending": 569,
+   "stored": 2494
+  },
+  {
+   "t": 130,
+   "pending": 569,
+   "stored": 2526
+  },
+  {
+   "t": 132,
+   "pending": 469,
+   "stored": 2557
+  },
+  {
+   "t": 133,
+   "pending": 469,
+   "stored": 2588
+  },
+  {
+   "t": 135,
+   "pending": 469,
+   "stored": 2620
+  },
+  {
+   "t": 136,
+   "pending": 369,
+   "stored": 2652
+  },
+  {
+   "t": 138,
+   "pending": 369,
+   "stored": 2683
+  },
+  {
+   "t": 140,
+   "pending": 369,
+   "stored": 2715
+  },
+  {
+   "t": 141,
+   "pending": 269,
+   "stored": 2745
+  },
+  {
+   "t": 143,
+   "pending": 269,
+   "stored": 2776
+  },
+  {
+   "t": 144,
+   "pending": 269,
+   "stored": 2808
+  },
+  {
+   "t": 146,
+   "pending": 169,
+   "stored": 2840
+  },
+  {
+   "t": 148,
+   "pending": 169,
+   "stored": 2870
+  },
+  {
+   "t": 149,
+   "pending": 169,
+   "stored": 2902
+  },
+  {
+   "t": 151,
+   "pending": 169,
+   "stored": 2933
+  },
+  {
+   "t": 152,
+   "pending": 69,
+   "stored": 2964
+  },
+  {
+   "t": 154,
+   "pending": 69,
+   "stored": 2995
+  },
+  {
+   "t": 155,
+   "pending": 0,
+   "stored": 3000
+  },
+  {
+   "t": 157,
+   "pending": 0,
+   "stored": 3000
+  },
+  {
+   "t": 159,
+   "pending": 0,
+   "stored": 3000
+  }
+ ]
+}

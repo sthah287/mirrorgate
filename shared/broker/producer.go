@@ -6,6 +6,7 @@ package broker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -63,6 +64,76 @@ func (p *Producer) PublishStored(ctx context.Context, requestID string, payload 
 		return fmt.Errorf("publish %s: %w", requestID, err)
 	}
 	return nil
+}
+
+// StoredMessage is one outbox row on its way to the topic. The traceparent
+// travels with the message rather than coming from the caller's context,
+// because a batch holds events from many different requests and each one
+// belongs to its own trace.
+type StoredMessage struct {
+	RequestID   string
+	Payload     []byte
+	Traceparent string
+}
+
+// PublishStoredBatch sends a whole batch in one call and reports which
+// messages the broker acknowledged.
+//
+// The relay used to publish one message per call, and kafka-go waits out the
+// writer's batch timeout before flushing a single message, so the cost per
+// event was roughly that timeout. Handing it the whole batch lets it send one
+// request instead of N.
+//
+// Partial failures matter here: an event marked published when the broker
+// never took it would be lost. kafka-go reports one error per message when
+// several are written together, so that case returns exactly the ids that
+// were acknowledged. If the failure arrives without per-message detail there
+// is no way to tell which ones landed, so none are reported as acknowledged
+// and the whole batch is retried. The worker drops the duplicates.
+func (p *Producer) PublishStoredBatch(ctx context.Context, msgs []StoredMessage) ([]string, error) {
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+
+	kmsgs := make([]kafka.Message, len(msgs))
+	for i, m := range msgs {
+		km := kafka.Message{Key: []byte(m.RequestID), Value: m.Payload}
+		if m.Traceparent != "" {
+			km.Headers = append(km.Headers, kafka.Header{Key: "traceparent", Value: []byte(m.Traceparent)})
+		}
+		kmsgs[i] = km
+	}
+
+	err := p.writer.WriteMessages(ctx, kmsgs...)
+	if err == nil {
+		acked := make([]string, len(msgs))
+		for i, m := range msgs {
+			acked[i] = m.RequestID
+		}
+		return acked, nil
+	}
+
+	var perMessage kafka.WriteErrors
+	if errors.As(err, &perMessage) {
+		var acked []string
+		var firstErr error
+		for i := range msgs {
+			if i >= len(perMessage) {
+				break
+			}
+			if perMessage[i] == nil {
+				acked = append(acked, msgs[i].RequestID)
+			} else if firstErr == nil {
+				firstErr = perMessage[i]
+			}
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		return acked, fmt.Errorf("publish batch of %d, %d acknowledged: %w", len(msgs), len(acked), firstErr)
+	}
+
+	return nil, fmt.Errorf("publish batch of %d, acknowledgement unknown: %w", len(msgs), err)
 }
 
 func (p *Producer) Close() error {

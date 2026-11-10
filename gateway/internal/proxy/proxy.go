@@ -47,12 +47,19 @@ type Sampler interface {
 	Mirror(method, path string) bool
 }
 
+// Recorder is offered every request so a sample can be kept for replay. It
+// is nil unless recording is turned on, and it must not block.
+type Recorder interface {
+	Observe(r *http.Request, requestID string)
+}
+
 type Config struct {
 	StableURL     string
 	CandidateURL  string
 	ShadowTimeout time.Duration
 	MirrorMethods []string
 	MaxInFlight   int
+	Recorder      Recorder
 }
 
 // Stats are counted in the gateway because the database only ever hears
@@ -78,6 +85,7 @@ type Proxy struct {
 	sampler       Sampler
 	shadowTimeout time.Duration
 	mirrorMethods map[string]bool
+	recorder      Recorder
 	startedAt     time.Time
 
 	slots chan struct{}
@@ -114,6 +122,7 @@ func New(cfg Config, publisher Publisher, sampler Sampler) (*Proxy, error) {
 	return &Proxy{
 		stableURL:    stableURL,
 		candidateURL: candidateURL,
+		recorder:     cfg.Recorder,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 			// otelhttp adds a span per upstream call and puts the traceparent
@@ -166,6 +175,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestID := rand.Text()
+	// Recording is independent of sampling: a request that was not mirrored
+	// is still worth replaying later, and the recorder is what decides
+	// whether this one is kept.
+	if p.recorder != nil {
+		p.recorder.Observe(r, requestID)
+	}
 	stableReq, err := newUpstreamRequest(r.Context(), r, p.stableURL, body, requestID)
 	if err != nil {
 		slog.Error("build stable request", "err", err)

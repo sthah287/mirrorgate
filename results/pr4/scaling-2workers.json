@@ -1,0 +1,39 @@
+{
+ "label": "scaling-2workers",
+ "workers_configured": 2,
+ "workers_that_did_work": 2,
+ "rebalance_during_run": false,
+ "workload": {
+  "rate_per_s": 99.0635449189027,
+  "total_requests": 3001
+ },
+ "mirrored": 3001,
+ "stored": 3001,
+ "distinct_request_ids": 3001,
+ "complete": true,
+ "duplicate_rows": 0,
+ "events_handled_per_worker": {
+  "comparison-worker-5": 1987,
+  "comparison-worker-6": 1014
+ },
+ "events_handled_total": 3001,
+ "request_ids_handled_twice": 0,
+ "partitions_per_member": {
+  "172.20.0.12": 1,
+  "172.20.0.3": 2
+ },
+ "latency_ms": {
+  "p50": 0.655,
+  "p95": 0.975
+ },
+ "cpu_seconds": {
+  "candidate-service": 0.8716,
+  "comparison-worker": 1.2781,
+  "comparison-worker#5": 0.8061,
+  "comparison-worker#6": 0.472,
+  "gateway": 2.9128,
+  "outbox-relay": 0.6633,
+  "postgres": 2.1692,
+  "stable-service": 0.8952
+ }
+}

@@ -1,0 +1,240 @@
+{
+  "run": "endpoint-t2",
+  "strategy": "endpoint",
+  "trial": 2,
+  "mode": "endpoint",
+  "publish_mode": "outbox",
+  "valid": true,
+  "invalid_reasons": [],
+  "workload": {
+    "script": "experiments/rare-random.js",
+    "rate_per_s": 100.0,
+    "duration": "30s",
+    "total_requests": 3001,
+    "fault_every": null
+  },
+  "sampling": {
+    "mode": "endpoint",
+    "route_templates": true,
+    "eligible": 3001,
+    "mirrored": 1208,
+    "skipped": 1793,
+    "actual_rate_pct": 40.25,
+    "published": 1208,
+    "publish_failed": 0,
+    "skipped_in_flight": 0,
+    "endpoints": []
+  },
+  "outbox": {
+    "pending": 0,
+    "published": 1208,
+    "oldest_pending_sec": 0,
+    "failed_attempts": 0
+  },
+  "stored": {
+    "total": 1208,
+    "matched": 1202,
+    "different": 3,
+    "errors": 3,
+    "slow": 1,
+    "orders_mirrored": 1,
+    "max_request_seq": 3001
+  },
+  "detection": {
+    "faults_detected": 5,
+    "faults_total": 5,
+    "per_fault": {
+      "R1": {
+        "detected": true,
+        "hits": 2,
+        "requests_until_detection": 950,
+        "arrival_delay_ms": 9488.3,
+        "confirmation_delay_ms": 9552.5,
+        "pipeline_delay_ms": 64.1,
+        "delay_since_gateway_start_ms": 11318.4,
+        "description": "price mismatch on /api/products/12"
+      },
+      "R2": {
+        "detected": true,
+        "hits": 2,
+        "requests_until_detection": 1710,
+        "arrival_delay_ms": 17089.0,
+        "confirmation_delay_ms": 17150.1,
+        "pipeline_delay_ms": 61.1,
+        "delay_since_gateway_start_ms": 18919.0,
+        "description": "candidate 500 on /api/products/8"
+      },
+      "R3": {
+        "detected": true,
+        "hits": 1,
+        "requests_until_detection": 1858,
+        "arrival_delay_ms": 18568.3,
+        "confirmation_delay_ms": 19058.7,
+        "pipeline_delay_ms": 490.3,
+        "delay_since_gateway_start_ms": 20398.4,
+        "description": "slow /api/products?category=audio"
+      },
+      "R4": {
+        "detected": true,
+        "hits": 1,
+        "requests_until_detection": 980,
+        "arrival_delay_ms": 9789.0,
+        "confirmation_delay_ms": 11879.5,
+        "pipeline_delay_ms": 2090.4,
+        "delay_since_gateway_start_ms": 11619.1,
+        "description": "timeout on /api/users/7"
+      },
+      "R5": {
+        "detected": true,
+        "hits": 1,
+        "requests_until_detection": 2044,
+        "arrival_delay_ms": 20428.9,
+        "confirmation_delay_ms": 20492.8,
+        "pipeline_delay_ms": 63.8,
+        "delay_since_gateway_start_ms": 22259.0,
+        "description": "wrong total on POST /api/orders"
+      }
+    }
+  },
+  "fault_plan": {
+    "seed": 70002,
+    "per_fault_occurrences": 3,
+    "faults": {
+      "R1": {
+        "expected_request_seq": [
+          675,
+          950,
+          2314
+        ],
+        "caught_request_seq": [
+          950,
+          2314
+        ],
+        "first_caught_occurrence": 2,
+        "occurrences_caught": 2,
+        "requests_after_first_occurrence": 275
+      },
+      "R2": {
+        "expected_request_seq": [
+          494,
+          1710,
+          1843
+        ],
+        "caught_request_seq": [
+          1710,
+          1843
+        ],
+        "first_caught_occurrence": 2,
+        "occurrences_caught": 2,
+        "requests_after_first_occurrence": 1216
+      },
+      "R3": {
+        "expected_request_seq": [
+          388,
+          1098,
+          1858
+        ],
+        "caught_request_seq": [
+          1858
+        ],
+        "first_caught_occurrence": 3,
+        "occurrences_caught": 1,
+        "requests_after_first_occurrence": 1470
+      },
+      "R4": {
+        "expected_request_seq": [
+          514,
+          980,
+          2290
+        ],
+        "caught_request_seq": [
+          980
+        ],
+        "first_caught_occurrence": 2,
+        "occurrences_caught": 1,
+        "requests_after_first_occurrence": 466
+      },
+      "R5": {
+        "expected_request_seq": [
+          1714,
+          2044,
+          2669
+        ],
+        "caught_request_seq": [
+          2044
+        ],
+        "first_caught_occurrence": 2,
+        "occurrences_caught": 1,
+        "requests_after_first_occurrence": 330
+      }
+    },
+    "max_position_drift": 0,
+    "detections_off_plan": []
+  },
+  "latency_ms": {
+    "p50": 0.808,
+    "p95": 1.102,
+    "p99": 1.534,
+    "avg": 0.827,
+    "max": 6.585
+  },
+  "clean_latency_delta_ms": {
+    "count": 1201,
+    "p50": -0.01,
+    "p99": 0.365,
+    "max": 3.357
+  },
+  "resources": {
+    "candidate-service": {
+      "cpu_seconds": 0.5756,
+      "mem_mean_mb": 11.65,
+      "mem_peak_mb": 13.31,
+      "memory_samples": 16
+    },
+    "comparison-worker": {
+      "cpu_seconds": 0.685,
+      "mem_mean_mb": 10.22,
+      "mem_peak_mb": 10.4,
+      "memory_samples": 16
+    },
+    "gateway": {
+      "cpu_seconds": 2.7877,
+      "mem_mean_mb": 12.66,
+      "mem_peak_mb": 14.23,
+      "memory_samples": 16
+    },
+    "outbox-relay": {
+      "cpu_seconds": 0.5871,
+      "mem_mean_mb": 13.8,
+      "mem_peak_mb": 13.99,
+      "memory_samples": 16
+    },
+    "postgres": {
+      "cpu_seconds": 1.2113,
+      "mem_mean_mb": 45.88,
+      "mem_peak_mb": 46.75,
+      "memory_samples": 16
+    },
+    "stable-service": {
+      "cpu_seconds": 1.1589,
+      "mem_mean_mb": 12.29,
+      "mem_peak_mb": 13.63,
+      "memory_samples": 16
+    }
+  },
+  "resource_method": {
+    "cpu": "cgroup v1 cpuacct.usage delta, exact CPU time for the window",
+    "memory": "docker stats sampled during the window; peak is the largest sample, because cgroup v1 memory.max_usage_in_bytes cannot be reset between runs here"
+  },
+  "side_effects": {
+    "orders_sent_by_client": 3,
+    "orders_mirrored": 1,
+    "calls": {
+      "live_email": 3,
+      "live_payment": 3,
+      "sandbox_email": 1,
+      "sandbox_payment": 1
+    },
+    "isolation_ok": true
+  }
+}

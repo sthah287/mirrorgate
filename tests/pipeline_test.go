@@ -262,6 +262,15 @@ func TestSamplingIsReportedForTheDashboard(t *testing.T) {
 	if stats.Sampling.Rate < 0 || stats.Sampling.Rate > 1 {
 		t.Errorf("sampling rate = %v", stats.Sampling.Rate)
 	}
+
+	// The dashboard types this field as required, and a missing bool decodes
+	// to false rather than failing, so check the key is really there.
+	var raw map[string]map[string]any
+	getJSON(t, admin+"/internal/stats", &raw)
+	if _, ok := raw["sampling"]["route_templates"]; !ok {
+		t.Error("route_templates is missing from /internal/stats")
+	}
+
 	fmt.Printf("sampling: mode=%s rate=%v mirrored=%d skipped=%d\n",
 		stats.Sampling.Mode, stats.Sampling.Rate, stats.Sampling.Mirrored, stats.Sampling.Skipped)
 }
@@ -279,5 +288,36 @@ func TestFieldsThatDifferByDesignAreNotReported(t *testing.T) {
 
 	if c.Outcome != "match" {
 		t.Errorf("/health came out as %s (%v); the version field should be ignored", c.Outcome, c.Differences)
+	}
+}
+
+// The replay trigger sends traffic, so an unauthenticated call to it must
+// never do anything, whatever the gateway happens to be configured with. In
+// the default stack replay is not configured at all and the answer is 503;
+// with a token set it is 401. A 200 here would mean anything that can reach
+// the internal port can make the gateway generate requests.
+func TestReplayTriggerIsNeverOpen(t *testing.T) {
+	_, admin := urls(t)
+
+	for _, token := range []string{"", "not-the-token"} {
+		req, err := http.NewRequest(http.MethodPost, admin+"/internal/replay?limit=1", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if token != "" {
+			req.Header.Set("X-Replay-Token", token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("call replay trigger: %v", err)
+		}
+		resp.Body.Close()
+
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusServiceUnavailable:
+		default:
+			t.Errorf("replay trigger answered %d for token %q, want 401 or 503",
+				resp.StatusCode, token)
+		}
 	}
 }

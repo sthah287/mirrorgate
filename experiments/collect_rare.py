@@ -32,6 +32,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# How far a request's arrival position may sit from its iteration number
+# before the two are treated as unrelated. See the comment where it is used.
+DRIFT = 25
+
 FAULTS = {
     "R1": "price mismatch on /api/products/12",
     "R2": "candidate 500 on /api/products/8",
@@ -123,6 +127,57 @@ def main():
 
     found = sum(1 for d in detection.values() if d["detected"])
 
+    # The randomised workload writes the positions it drew next to the
+    # results. With it, a detection can be tied to which occurrence of the
+    # fault was caught rather than only to the fault.
+    plan_path = out / f"{run}.faults.json"
+    fault_plan = None
+    if plan_path.exists():
+        plan = load(plan_path)
+        per_fault = {}
+        offsets = []
+        off_plan = []
+        for fault in FAULTS:
+            expected = plan["expected_request_seq"][fault]
+            caught = [int(x) for x in (db["faults"][fault].get("seqs") or [])]
+            first = detection[fault]["requests_until_detection"]
+
+            # Each caught row belongs to the planned position nearest it. The
+            # two numbers are usually equal, but k6 spreads iterations over 50
+            # virtual users, so a request can reach the gateway a few places
+            # from where its iteration number says. The planned positions of
+            # one fault are hundreds of requests apart, so nearest wins by a
+            # wide margin; anything further than DRIFT away is reported
+            # instead of being matched.
+            matched = []
+            for seq in caught:
+                nearest = min(expected, key=lambda e: abs(e - seq))
+                offsets.append(seq - nearest)
+                if abs(seq - nearest) > DRIFT:
+                    off_plan.append(f"{fault}@{seq}")
+                else:
+                    matched.append(expected.index(nearest) + 1)
+
+            index = min(matched) if matched else None
+            per_fault[fault] = {
+                "expected_request_seq": expected,
+                "caught_request_seq": caught,
+                # Which occurrence was the first one caught, counting from 1.
+                "first_caught_occurrence": index,
+                "occurrences_caught": len(matched),
+                "requests_after_first_occurrence":
+                    first - expected[0] if first is not None else None,
+            }
+        fault_plan = {
+            "seed": plan["seed"],
+            "per_fault_occurrences": plan["per_fault"],
+            "faults": per_fault,
+            "max_position_drift": max((abs(o) for o in offsets), default=0),
+            # Anything here means a detection could not be matched to a
+            # planned position at all, which would invalidate the positions.
+            "detections_off_plan": off_plan,
+        }
+
     # A run where events were lost or shadow slots ran out is not a clean
     # measurement of sampling, so flag it rather than averaging it in.
     invalid = []
@@ -131,7 +186,10 @@ def main():
     if gateway["skipped_in_flight"] > 0:
         invalid.append(f"skipped_in_flight={gateway['skipped_in_flight']}")
 
-    orders_sent = total_requests // 1000 + (1 if total_requests % 1000 > 900 else 0)
+    if fault_plan:
+        orders_sent = len(fault_plan["faults"]["R5"]["expected_request_seq"])
+    else:
+        orders_sent = total_requests // 1000 + (1 if total_requests % 1000 > 900 else 0)
     counts = external.get("counts", {})
 
     deltas = [float(d) for d in db.get("clean_latency_deltas", [])]
@@ -146,14 +204,17 @@ def main():
         "valid": not invalid,
         "invalid_reasons": invalid,
         "workload": {
-            "script": "experiments/rare.js",
+            "script": "experiments/rare-random.js" if fault_plan else "experiments/rare.js",
             "rate_per_s": rate,
             "duration": duration,
             "total_requests": total_requests,
-            "fault_every": 1000,
+            "fault_every": None if fault_plan else 1000,
         },
         "sampling": {
             "mode": stats["sampling"]["mode"],
+            # Recorded rather than inferred from the arm name, so a run file
+            # says which configuration actually produced it.
+            "route_templates": stats["sampling"].get("route_templates"),
             "eligible": eligible,
             "mirrored": mirrored,
             "skipped": stats["sampling"]["skipped"],
@@ -178,6 +239,7 @@ def main():
             "faults_total": len(FAULTS),
             "per_fault": detection,
         },
+        "fault_plan": fault_plan,
         "latency_ms": {
             "p50": round(duration_ms["med"], 3),
             "p95": round(duration_ms["p(95)"], 3),

@@ -1,0 +1,694 @@
+{
+ "method": "the trial is the unit of observation; paired comparisons use the trial pairing, which is real because both arms of a trial saw the same fault positions; per-fault McNemar is exact and two sided, and five faults means five tests on one dataset",
+ "strategies": {
+  "off": {
+   "trials": 20,
+   "per_trial_proportions": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "detected": 0,
+   "opportunities": 100,
+   "detection": 0.0,
+   "mirrored_pct": 0.0,
+   "cluster_t": [
+    0.0,
+    0.0
+   ],
+   "cluster_bootstrap": [
+    0.0,
+    0.0
+   ],
+   "pooled_wilson": [
+    0.0,
+    0.03699480747600191
+   ],
+   "degenerate": true
+  },
+  "full": {
+   "trials": 20,
+   "per_trial_proportions": [
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "detected": 100,
+   "opportunities": 100,
+   "detection": 1.0,
+   "mirrored_pct": 100.0,
+   "cluster_t": [
+    1.0,
+    1.0
+   ],
+   "cluster_bootstrap": [
+    1.0,
+    1.0
+   ],
+   "pooled_wilson": [
+    0.9630051925239981,
+    0.9999999999999999
+   ],
+   "degenerate": true
+  },
+  "random-50": {
+   "trials": 20,
+   "per_trial_proportions": [
+    0.8,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.8,
+    0.8,
+    1.0,
+    1.0,
+    0.8,
+    0.8,
+    0.8,
+    0.8,
+    0.8,
+    0.6,
+    0.8,
+    1.0,
+    0.6,
+    0.8,
+    1.0
+   ],
+   "detected": 86,
+   "opportunities": 100,
+   "detection": 0.86,
+   "mirrored_pct": 49.789,
+   "cluster_t": [
+    0.7985086041106477,
+    0.9214913958893522
+   ],
+   "cluster_bootstrap": [
+    0.8,
+    0.9099999999999999
+   ],
+   "pooled_wilson": [
+    0.7786263961619276,
+    0.914737342455351
+   ],
+   "degenerate": false
+  },
+  "random-25": {
+   "trials": 20,
+   "per_trial_proportions": [
+    0.8,
+    0.8,
+    0.8,
+    0.4,
+    0.6,
+    0.4,
+    0.2,
+    0.6,
+    0.8,
+    0.8,
+    0.8,
+    0.8,
+    0.6,
+    0.6,
+    0.4,
+    0.6,
+    0.6,
+    0.6,
+    0.8,
+    0.8
+   ],
+   "detected": 64,
+   "opportunities": 100,
+   "detection": 0.64,
+   "mirrored_pct": 24.9115,
+   "cluster_t": [
+    0.55628,
+    0.72372
+   ],
+   "cluster_bootstrap": [
+    0.56,
+    0.7100000000000001
+   ],
+   "pooled_wilson": [
+    0.542352199811621,
+    0.7272892540950986
+   ],
+   "degenerate": false
+  },
+  "random-10": {
+   "trials": 20,
+   "per_trial_proportions": [
+    0.2,
+    0.2,
+    0.4,
+    0.4,
+    0.6,
+    0.4,
+    0.4,
+    0.6,
+    0.6,
+    0.0,
+    0.4,
+    0.0,
+    0.2,
+    0.2,
+    0.2,
+    0.2,
+    0.0,
+    0.2,
+    0.4,
+    0.0
+   ],
+   "detected": 28,
+   "opportunities": 100,
+   "detection": 0.28,
+   "mirrored_pct": 10.1595,
+   "cluster_t": [
+    0.18689213883604505,
+    0.373107861163955
+   ],
+   "cluster_bootstrap": [
+    0.2,
+    0.36
+   ],
+   "pooled_wilson": [
+    0.2013955916759837,
+    0.37488212361345724
+   ],
+   "degenerate": false
+  },
+  "endpoint": {
+   "trials": 20,
+   "per_trial_proportions": [
+    1.0,
+    1.0,
+    0.8,
+    1.0,
+    1.0,
+    0.6,
+    1.0,
+    0.8,
+    1.0,
+    1.0,
+    1.0,
+    0.6,
+    0.8,
+    0.4,
+    0.8,
+    1.0,
+    0.8,
+    0.8,
+    1.0,
+    0.6
+   ],
+   "detected": 85,
+   "opportunities": 100,
+   "detection": 0.85,
+   "mirrored_pct": 41.334,
+   "cluster_t": [
+    0.7647787883150408,
+    0.9352212116849592
+   ],
+   "cluster_bootstrap": [
+    0.77,
+    0.9199999999999999
+   ],
+   "pooled_wilson": [
+    0.7671626666784216,
+    0.906940968088377
+   ],
+   "degenerate": false
+  },
+  "risk": {
+   "trials": 20,
+   "per_trial_proportions": [
+    1.0,
+    0.2,
+    0.4,
+    0.6,
+    0.6,
+    0.2,
+    0.8,
+    0.2,
+    0.4,
+    0.4,
+    0.6,
+    0.4,
+    0.8,
+    0.6,
+    0.8,
+    0.6,
+    0.6,
+    0.6,
+    0.4,
+    0.4
+   ],
+   "detected": 53,
+   "opportunities": 100,
+   "detection": 0.53,
+   "mirrored_pct": 20.8835,
+   "cluster_t": [
+    0.42802805599990806,
+    0.6319719440000919
+   ],
+   "cluster_bootstrap": [
+    0.44000000000000006,
+    0.62
+   ],
+   "pooled_wilson": [
+    0.4328868313724773,
+    0.6248934801789626
+   ],
+   "degenerate": false
+  },
+  "risk-urls": {
+   "trials": 20,
+   "per_trial_proportions": [
+    0.8,
+    0.2,
+    0.8,
+    1.0,
+    0.6,
+    0.2,
+    0.4,
+    0.4,
+    0.6,
+    0.6,
+    0.6,
+    0.8,
+    0.6,
+    0.8,
+    0.8,
+    0.6,
+    0.6,
+    0.8,
+    0.4,
+    0.4
+   ],
+   "detected": 60,
+   "opportunities": 100,
+   "detection": 0.6,
+   "mirrored_pct": 10.158,
+   "cluster_t": [
+    0.4992792928832146,
+    0.7007207071167854
+   ],
+   "cluster_bootstrap": [
+    0.51,
+    0.6900000000000001
+   ],
+   "pooled_wilson": [
+    0.5020007846184025,
+    0.6906002538863971
+   ],
+   "degenerate": false
+  }
+ },
+ "comparisons": {
+  "risk-urls_vs_random-10": {
+   "trials": 20,
+   "mirrored_pct": [
+    10.158,
+    10.1595
+   ],
+   "rate_matched": true,
+   "per_trial_differences": [
+    0.6000000000000001,
+    0.0,
+    0.4,
+    0.6,
+    0.0,
+    -0.2,
+    0.0,
+    -0.19999999999999996,
+    0.0,
+    0.6,
+    0.19999999999999996,
+    0.8,
+    0.39999999999999997,
+    0.6000000000000001,
+    0.6000000000000001,
+    0.39999999999999997,
+    0.6,
+    0.6000000000000001,
+    0.0,
+    0.4
+   ],
+   "mean_difference": 0.32,
+   "paired_interval": [
+    0.17309710575743545,
+    0.4669028942425646
+   ],
+   "separated": true,
+   "trials_ahead": 13,
+   "trials_behind": 2,
+   "per_fault": {
+    "R1": {
+     "a_detected": 11,
+     "b_detected": 3,
+     "only_a": 11,
+     "only_b": 3,
+     "p": 0.057373046875,
+     "meets_bonferroni": false
+    },
+    "R2": {
+     "a_detected": 13,
+     "b_detected": 7,
+     "only_a": 7,
+     "only_b": 1,
+     "p": 0.0703125,
+     "meets_bonferroni": false
+    },
+    "R3": {
+     "a_detected": 13,
+     "b_detected": 5,
+     "only_a": 9,
+     "only_b": 1,
+     "p": 0.021484375,
+     "meets_bonferroni": false
+    },
+    "R4": {
+     "a_detected": 9,
+     "b_detected": 6,
+     "only_a": 7,
+     "only_b": 4,
+     "p": 0.548828125,
+     "meets_bonferroni": false
+    },
+    "R5": {
+     "a_detected": 14,
+     "b_detected": 7,
+     "only_a": 9,
+     "only_b": 2,
+     "p": 0.0654296875,
+     "meets_bonferroni": false
+    }
+   }
+  },
+  "risk_vs_random-25": {
+   "trials": 20,
+   "mirrored_pct": [
+    20.8835,
+    24.9115
+   ],
+   "rate_matched": true,
+   "per_trial_differences": [
+    0.19999999999999996,
+    -0.6000000000000001,
+    -0.4,
+    0.19999999999999996,
+    0.0,
+    -0.2,
+    0.6000000000000001,
+    -0.39999999999999997,
+    -0.4,
+    -0.4,
+    -0.20000000000000007,
+    -0.4,
+    0.20000000000000007,
+    0.0,
+    0.4,
+    0.0,
+    0.0,
+    0.0,
+    -0.4,
+    -0.4
+   ],
+   "mean_difference": -0.11000000000000001,
+   "paired_interval": [
+    -0.26023937690793386,
+    0.04023937690793386
+   ],
+   "separated": false,
+   "trials_ahead": 5,
+   "trials_behind": 10,
+   "per_fault": {
+    "R1": {
+     "a_detected": 7,
+     "b_detected": 13,
+     "only_a": 2,
+     "only_b": 8,
+     "p": 0.109375,
+     "meets_bonferroni": false
+    },
+    "R2": {
+     "a_detected": 7,
+     "b_detected": 12,
+     "only_a": 4,
+     "only_b": 9,
+     "p": 0.266845703125,
+     "meets_bonferroni": false
+    },
+    "R3": {
+     "a_detected": 14,
+     "b_detected": 13,
+     "only_a": 5,
+     "only_b": 4,
+     "p": 1.0,
+     "meets_bonferroni": false
+    },
+    "R4": {
+     "a_detected": 7,
+     "b_detected": 12,
+     "only_a": 4,
+     "only_b": 9,
+     "p": 0.266845703125,
+     "meets_bonferroni": false
+    },
+    "R5": {
+     "a_detected": 18,
+     "b_detected": 14,
+     "only_a": 6,
+     "only_b": 2,
+     "p": 0.2890625,
+     "meets_bonferroni": false
+    }
+   }
+  },
+  "risk_vs_risk-urls": {
+   "trials": 20,
+   "mirrored_pct": [
+    20.8835,
+    10.158
+   ],
+   "rate_matched": false,
+   "per_trial_differences": [
+    0.19999999999999996,
+    0.0,
+    -0.4,
+    -0.4,
+    0.0,
+    0.0,
+    0.4,
+    -0.2,
+    -0.19999999999999996,
+    -0.19999999999999996,
+    0.0,
+    -0.4,
+    0.20000000000000007,
+    -0.20000000000000007,
+    0.0,
+    0.0,
+    0.0,
+    -0.20000000000000007,
+    0.0,
+    0.0
+   ],
+   "mean_difference": -0.07,
+   "paired_interval": [
+    -0.167344930368361,
+    0.027344930368360984
+   ],
+   "separated": false,
+   "trials_ahead": 3,
+   "trials_behind": 8,
+   "per_fault": {
+    "R1": {
+     "a_detected": 7,
+     "b_detected": 11,
+     "only_a": 3,
+     "only_b": 7,
+     "p": 0.34375,
+     "meets_bonferroni": false
+    },
+    "R2": {
+     "a_detected": 7,
+     "b_detected": 13,
+     "only_a": 2,
+     "only_b": 8,
+     "p": 0.109375,
+     "meets_bonferroni": false
+    },
+    "R3": {
+     "a_detected": 14,
+     "b_detected": 13,
+     "only_a": 3,
+     "only_b": 2,
+     "p": 1.0,
+     "meets_bonferroni": false
+    },
+    "R4": {
+     "a_detected": 7,
+     "b_detected": 9,
+     "only_a": 3,
+     "only_b": 5,
+     "p": 0.7265625,
+     "meets_bonferroni": false
+    },
+    "R5": {
+     "a_detected": 18,
+     "b_detected": 14,
+     "only_a": 6,
+     "only_b": 2,
+     "p": 0.2890625,
+     "meets_bonferroni": false
+    }
+   }
+  },
+  "risk_vs_random-10": {
+   "trials": 20,
+   "mirrored_pct": [
+    20.8835,
+    10.1595
+   ],
+   "rate_matched": false,
+   "per_trial_differences": [
+    0.8,
+    0.0,
+    0.0,
+    0.19999999999999996,
+    0.0,
+    -0.2,
+    0.4,
+    -0.39999999999999997,
+    -0.19999999999999996,
+    0.4,
+    0.19999999999999996,
+    0.4,
+    0.6000000000000001,
+    0.39999999999999997,
+    0.6000000000000001,
+    0.39999999999999997,
+    0.6,
+    0.39999999999999997,
+    0.0,
+    0.4
+   ],
+   "mean_difference": 0.25,
+   "paired_interval": [
+    0.1016135948381992,
+    0.3983864051618008
+   ],
+   "separated": true,
+   "trials_ahead": 13,
+   "trials_behind": 3,
+   "per_fault": {
+    "R1": {
+     "a_detected": 7,
+     "b_detected": 3,
+     "only_a": 5,
+     "only_b": 1,
+     "p": 0.21875,
+     "meets_bonferroni": false
+    },
+    "R2": {
+     "a_detected": 7,
+     "b_detected": 7,
+     "only_a": 4,
+     "only_b": 4,
+     "p": 1.0,
+     "meets_bonferroni": false
+    },
+    "R3": {
+     "a_detected": 14,
+     "b_detected": 5,
+     "only_a": 10,
+     "only_b": 1,
+     "p": 0.01171875,
+     "meets_bonferroni": false
+    },
+    "R4": {
+     "a_detected": 7,
+     "b_detected": 6,
+     "only_a": 6,
+     "only_b": 5,
+     "p": 1.0,
+     "meets_bonferroni": false
+    },
+    "R5": {
+     "a_detected": 18,
+     "b_detected": 7,
+     "only_a": 12,
+     "only_b": 1,
+     "p": 0.00341796875,
+     "meets_bonferroni": true
+    }
+   }
+  }
+ },
+ "cost_per_detection": {
+  "off": null,
+  "full": {
+   "mirrored_per_fault": 600.09,
+   "cpu_per_fault": 1.4396
+  },
+  "random-50": {
+   "mirrored_per_fault": 347.45348837209303,
+   "cpu_per_fault": 1.203889534883721
+  },
+  "random-25": {
+   "mirrored_per_fault": 233.53125,
+   "cpu_per_fault": 1.1489921875
+  },
+  "random-10": {
+   "mirrored_per_fault": 217.75,
+   "cpu_per_fault": 2.012432142857143
+  },
+  "endpoint": {
+   "mirrored_per_fault": 291.4470588235294,
+   "cpu_per_fault": 1.051164705882353
+  },
+  "risk": {
+   "mirrored_per_fault": 236.47169811320754,
+   "cpu_per_fault": 1.2199396226415096
+  },
+  "risk-urls": {
+   "mirrored_per_fault": 101.6,
+   "cpu_per_fault": 0.91625
+  }
+ }
+}

@@ -52,10 +52,12 @@ func run() error {
 		MaxBackoff:     durationEnv("OUTBOX_MAX_BACKOFF", 10*time.Second),
 		Retention:      durationEnv("OUTBOX_RETENTION", time.Hour),
 		PublishTimeout: durationEnv("OUTBOX_PUBLISH_TIMEOUT", 10*time.Second),
+		SinglePublish:  os.Getenv("OUTBOX_SINGLE_PUBLISH") == "true",
 	}
 
 	slog.Info("relaying outbox events", "brokers", brokers, "topic", topic,
-		"batch", cfg.BatchSize, "poll", cfg.PollInterval, "retention", cfg.Retention)
+		"batch", cfg.BatchSize, "poll", cfg.PollInterval, "retention", cfg.Retention,
+		"single_publish", cfg.SinglePublish)
 
 	return relay.New(outbox.New(pool), producer, cfg).Run(ctx)
 }

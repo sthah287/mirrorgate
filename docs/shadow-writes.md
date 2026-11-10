@@ -78,6 +78,13 @@ isolation that is actually being demonstrated is:
 - the candidate's outbound calls go to different endpoints than the stable ones
 - the candidate rejects writes that aren't shadow traffic
 
+## Replayed traffic
+
+Recorded requests are replayed at the candidate as well, which is a second
+way traffic reaches it. It cannot reach this page's problem: only GETs are
+recorded, enforced in three places including a database constraint, so a
+replay has no write to isolate. See [replay.md](replay.md).
+
 ## What this does not solve
 
 - A real payment provider's sandbox is their system, not mine. Pointing a

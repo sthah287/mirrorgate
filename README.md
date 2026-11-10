@@ -14,8 +14,12 @@ The documents that define the experiment are in `docs/`:
 |---|---|
 | [docs/regression-catalog.md](docs/regression-catalog.md) | the five faults (R1-R5) and what counts as detecting each one |
 | [docs/comparison-rules.md](docs/comparison-rules.md) | what counts as a difference |
-| [docs/sampling-strategies.md](docs/sampling-strategies.md) | the four strategies, including how the risk score is calculated |
+| [docs/sampling-strategies.md](docs/sampling-strategies.md) | the four modes, including how the risk score is calculated and how routes are grouped |
 | [docs/shadow-writes.md](docs/shadow-writes.md) | how a mirrored `POST` is kept from causing real side effects |
+| [docs/outbox.md](docs/outbox.md) | the durable outbox, what it guarantees, and the relay's throughput |
+| [docs/replay.md](docs/replay.md) | recording read-only traffic and replaying it at the candidate |
+| [docs/scaling.md](docs/scaling.md) | partitions, more than one comparison worker, and rebalances |
+| [docs/evaluation-measures.md](docs/evaluation-measures.md) | what each measurement means and how it is produced |
 
 ## Verifying this without Go, Node or k6 installed
 
@@ -113,6 +117,14 @@ Added in weeks 8 and 9:
 - **An overhead experiment**, mirroring off against mirroring everything at a higher rate, reported as a difference with a confidence interval
 - **CI** that runs every module's tests and the dashboard build on GitHub
 
+Added in weeks 10 to 12:
+
+- **The relay publishes in batches.** The pipeline kept up with about 20 events a second before, so a backlog built for the whole run and took two minutes to clear. Measuring it showed 50.8 ms per event spent waiting out the Kafka writer's batch timer, and publishing a claimed batch in one call took the peak backlog from 2,485 events to 11 and the median confirmation delay from 61 seconds to 83 ms. Partial batch failures mark only the rows the broker acknowledged
+- **Risk scores can be grouped by route**, so `/api/products/1` and `/api/products/2` become one `GET /api/products/{id}` endpoint. The comparison records still carry the original path. It ships off: over 20 trials it mirrored twice as much traffic for no gain in detection, because one mismatch lifts the rate for a whole busy route
+- **Request recording and replay.** A sample of GET requests can be recorded and sent at the candidate later. GET only, no credentials stored, size capped, retention bounded, candidate only, and the trigger needs a token
+- **More than one comparison worker.** The topic has three partitions and the workers are one consumer group, so a second worker takes a share of the work. Verified with a worker joining mid-run: nothing lost, nothing stored twice
+- **Randomised fault positions.** The rare-fault workload now draws fault positions from a recorded seed, the same positions for every strategy in a trial and different positions between trials, so a result cannot depend on where the faults happened to sit
+
 Added in week 7, for the midterm:
 
 - **A fixed regression catalog**, R1 to R5, with stable IDs and a written rule for what counts as detecting each one. The faults are marked `REGRESSION (Rn)` in the candidate source
@@ -151,28 +163,36 @@ mirrorgate/
 ├── db/
 │   ├── init-app-databases.sql  stable_app and candidate_sandbox
 │   └── init.sql                comparison schema
-├── docs/                     catalog, comparison rules, sampling, shadow writes
+├── docs/                     catalog, comparison rules, sampling, shadow writes,
+│                             outbox, replay, scaling, evaluation measures
 ├── experiments/
 │   ├── sampling.js           week 5 k6 workload
 │   ├── run.sh                week 5 experiment, one run per strategy
 │   ├── midterm.js            week 7 workload, adds the order POST
 │   ├── run-midterm.sh        week 7 experiment, 5 trials per strategy
 │   ├── rare.js               week 9 workload, faults once in 1000 requests
-│   ├── run-rare.sh           week 9 experiment, 10 trials per arm
+│   ├── rare-random.js        week 12 workload, fault positions from a seed
+│   ├── run-rare.sh           the rare-fault experiment, either workload
 │   ├── run-overhead.sh       mirroring off vs full, for the overhead numbers
+│   ├── relay-throughput.sh   before and after the relay's batched publishing
+│   ├── run-scaling.sh        one worker, two workers, and a mid-run rebalance
 │   ├── resource_monitor.py   per-container CPU and memory for a run
-│   └── slow_threshold.py     measures what "significantly slower" should mean
+│   ├── slow_threshold.py     measures what "significantly slower" should mean
 │   ├── collect*.py           merge k6 + gateway + database results
 │   └── summarize*.py         build summary.csv and summary.md
 ├── results/progress-report-2/  week 5 experiment output
 ├── results/midterm/            week 7 experiment output
 ├── results/rare-faults/        week 9 rare-fault experiment output
 ├── results/overhead/           week 9 overhead measurement
+├── results/pr4/                weeks 10-12: relay throughput, route templates,
+│                               scaling, and the randomised-position experiment
 ├── tests/                    end-to-end tests against the running stack
 ├── scripts/
 │   ├── demo.sh               one request per scenario + results table
 │   ├── traffic.sh            repeated mixed traffic for the dashboard
-│   ├── failure-test.sh       worker down / broker down
+│   ├── failure-test.sh       worker down / broker down / redelivery
+│   ├── trace-check.sh        one trace per request, through a batched publish
+│   ├── replay-demo.sh        record, refuse, replay, and what it never touched
 │   └── run-tests.sh          runs every module's tests
 └── docker-compose.yml
 ```
@@ -217,6 +237,7 @@ docker compose up --build
 | `DATABASE_URL` | `postgres://mirrorgate:mirrorgate@localhost:5433/mirrorgate?sslmode=disable` | read only in the gateway now |
 | `KAFKA_BROKERS` | `localhost:19092` | comma separated |
 | `KAFKA_TOPIC` | `mirrorgate.comparisons` | |
+| `KAFKA_PARTITIONS` | `3` | how many comparison workers can run at once. An existing topic is grown to this |
 | `PORT` / `ADMIN_PORT` | `8080` / `8081` | proxy / internal API |
 | `SHADOW_TIMEOUT` | `2s` | max time for a candidate request |
 | `MAX_SHADOW_IN_FLIGHT` | `100` | extra requests aren't mirrored |
@@ -227,12 +248,19 @@ docker compose up --build
 | `SAMPLING_RULES` | | per-path rates for `endpoint` mode |
 | `RISK_WINDOW` | `10m` | how far back `risk` mode looks for mismatches |
 | `RISK_REFRESH` | `5s` | how often it re-reads them from Postgres |
+| `RISK_ROUTE_TEMPLATES` | `false` | `true` scores `/api/products/{id}` as one endpoint instead of one per url |
+| `REPLAY_RECORD` | `false` | record a sample of GETs for replay |
+| `REPLAY_RECORD_RATE` | `0.05` | share of eligible GETs recorded |
+| `REPLAY_MAX_RECORDS` | `2000` | hard cap on stored recordings |
+| `REPLAY_RETENTION` | `1h` | recordings older than this are deleted |
+| `REPLAY_TOKEN` | | required to trigger a replay. Unset means the trigger does not exist |
+| `REPLAY_MAX_BATCH` | `100` | largest replay batch, whatever is asked for |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | | empty turns tracing off |
 | `STABLE_VERSION` / `CANDIDATE_VERSION` | `v1` / `v2` | labels shown on the dashboard |
 
 Worker configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `KAFKA_GROUP`, `OTEL_EXPORTER_OTLP_ENDPOINT`, plus the comparison rules `COMPARE_IGNORE_FIELDS` and `COMPARE_SLOW_THRESHOLD_MS`.
 
-Relay configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `OUTBOX_BATCH_SIZE`, `OUTBOX_POLL_INTERVAL`, `OUTBOX_MAX_BACKOFF`, `OUTBOX_PUBLISH_TIMEOUT`, `OUTBOX_RETENTION`. See [docs/outbox.md](docs/outbox.md).
+Relay configuration: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC`, `OUTBOX_BATCH_SIZE`, `OUTBOX_POLL_INTERVAL`, `OUTBOX_MAX_BACKOFF`, `OUTBOX_PUBLISH_TIMEOUT`, `OUTBOX_RETENTION`, `OUTBOX_SINGLE_PUBLISH`. See [docs/outbox.md](docs/outbox.md).
 
 The gateway, stable, and candidate containers have fixed CPU and memory limits in `docker-compose.yml` (2 CPUs and 1 GB for the gateway, 1 CPU and 512 MB each for the services). They are there so every experiment run gets the same budget.
 
@@ -478,11 +506,47 @@ when the faults only explain 327. The other 148 were all `/health`: the two
 services report `"version":"v1"` and `"v2"` on purpose. `version` went onto
 `COMPARE_IGNORE_FIELDS` and the experiment was re-run from scratch.
 
-### The week 5 experiment
+## The rare-fault experiment, with the fault positions randomised
 
-`./experiments/run.sh` and `results/progress-report-2/` are still here. That
-one is a single run per strategy on a workload without the write endpoint, and
-it is what the earlier table below describes.
+Twenty trials per strategy over eight strategies, 3000 requests each. Every
+fault appears three times per trial at positions drawn from the trial's seed,
+so every strategy inside a trial sees the same positions and the next trial
+sees different ones. Raw files in `results/pr4/rare-random/`.
+
+```bash
+TRIALS=20 SEED_BASE=70000 WORKLOAD=k6-rare-random   OUT=results/pr4/rare-random ./experiments/run-rare.sh     # about four hours
+python experiments/verify_pr4.py                            # re-derive it all
+python experiments/compare_pr4.py                           # paired comparisons
+```
+
+| Strategy | Mirrored | Faults caught | 95% CI, clustered by trial | Mirrored per fault caught |
+|---|---|---|---|---|
+| full | 100.0% | 100% | 100–100% | 600 |
+| random 50% | 49.8% | 86% | 80–91% | 347 |
+| endpoint rules | 41.3% | 85% | 77–92% | 291 |
+| random 25% | 24.9% | 64% | 56–71% | 234 |
+| risk-priority | 10.2% | 60% | 51–69% | 102 |
+| risk-priority, grouped by route | 20.9% | 53% | 44–62% | 236 |
+| random 10% | 10.2% | 28% | 20–36% | 218 |
+| off | 0.0% | 0% | 0–0% | nothing caught |
+
+Risk-priority and random 10% mirror the same share of traffic. Paired by
+trial, risk-priority caught **32 points more of the faults, 95% interval +17
+to +47**, and caught a fault for 102 mirrored requests against 218. That is
+the comparison the week 9 report could not separate from zero at ten trials
+with the faults in fixed places.
+
+Grouping by route is the one thing that did not pay for itself, which is why
+it ships off. See [docs/sampling-strategies.md](docs/sampling-strategies.md).
+
+### The week 9 and week 5 experiments
+
+`./experiments/run-rare.sh` with its default workload and
+`results/rare-faults/` are the week 9 version, with the faults at fixed
+offsets and ten trials. `./experiments/run.sh` and
+`results/progress-report-2/` are the week 5 one: a single run per strategy on
+a workload without the write endpoint, which is what the earlier table below
+describes.
 
 ## Failure scenarios
 
@@ -495,6 +559,8 @@ it is what the earlier table below describes.
 **The broker stops.** Clients still get stable responses, and the events wait in the outbox instead of disappearing. When Redpanda comes back the relay drains them: 10 of 10 in the failure test, with nothing lost.
 
 **The relay is killed mid-run.** The rows it had not published yet are still in the table, so restarting it finishes the job. Also 10 of 10.
+
+**The same events are delivered twice.** Clearing `published_at` on rows the relay has already sent is what a crash between publishing and committing looks like from the database's side. The events go out again, the worker processes them again, and the stored comparisons do not change: 10 rows before, 10 after, no request id stored twice.
 
 **The broker stops, with `PUBLISH_MODE=direct`.** This is the old behaviour, kept so the difference can be measured rather than asserted. How much is lost is unpredictable: four runs of the same scenario lost 10, 1, 0 and 10 of 10. `publish_failed` counted 10 every time, so it is an upper bound on losses rather than a count of them.
 
@@ -548,21 +614,20 @@ What's covered:
 - Responses are fully buffered in memory, so very large or streaming responses aren't a good fit yet
 - Ignored fields are matched by exact name or exact path. No wildcards, no regular expressions
 - Risk mode starts cold: after a restart it has no history, so it cannot prioritise an endpoint until something has already gone wrong there once. It can also starve itself, since an endpoint sampled at 10% may never produce the mismatch that would raise its rate. The rare-endpoint rule is what partly covers this
-- Risk scores are keyed by exact path, so `/api/products/1` and `/api/products/2` are separate endpoints. Grouping by route template is the fix
+- Route templating is a guess at the route rather than the route itself: the gateway does not read the services' route tables, so a path parameter that is a word rather than an id is not grouped
 - Risk signals are polled from Postgres every 5 seconds, so the rate reacts a few seconds after the worker stores a result. The rarity counts are the gateway's own and reset when it restarts
 - JSON numbers are compared as float64
 - Sampling counters are in memory, so they reset when the gateway restarts. Skipped requests are counted but not recorded anywhere durable
-- One partition on the topic and one worker. Nothing has been tested with a consumer group bigger than one
-- The experiment is 5 trials per strategy on one laptop. Five faults is a small sample, so a detection rate of 80% means four out of five, not a precise probability
-- CPU and memory are not measured. The containers have fixed limits instead, so no strategy can use more than another
-- The internal API has no authentication
+- Three partitions and up to two workers have been tested. Two workers were never the bottleneck at 100 requests a second, so the scaling runs show the work being shared, not a throughput gain. The relay is still a single instance
+- The experiments are 5 to 20 trials per strategy on one laptop. Five faults is a small sample, so a detection rate of 80% means four out of five, not a precise probability
+- Memory is sampled about every two seconds, so a shorter spike is invisible. CPU is exact
+- The internal API has no authentication, except the replay trigger, which needs a token and refuses everything without one
 - The stable/candidate services are simple test services with hardcoded data
 
 ## Next steps
 
-- An outbox so a broker outage can't lose comparisons, instead of counting failures and hoping
-- A workload where the regressions are rare enough that sampling actually starts missing them, so the strategies separate more than they do at 3000 requests
-- Request replay: record traffic and run it against a candidate later, instead of only mirroring live
-- Fault injection on the candidate rather than faults hardcoded in its source
-- More than one partition and more than one worker, to see whether the comparison stage actually scales out
+- Fault injection on the candidate at runtime, rather than faults hardcoded in its source
+- Comparing a replayed response against the one stored when the request was recorded, so a replay can say whether the answer changed and not only how fast it was
+- A load high enough that one comparison worker cannot keep up, which is what would turn the scaling runs into a throughput result
+- A second relay instance; `SKIP LOCKED` already allows it and it has not been tested
 - Kubernetes deployment
